@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -9,6 +10,12 @@ from .database import Base, engine
 from .mqtt import frames_broadcaster, mqtt_ingest_loop, sensor_presence_loop
 from .retention import retention_loop
 from .routers import frames, sensors
+
+# aiomqtt drives its socket through add_reader/add_writer, which Windows' default
+# ProactorEventLoop does not implement -- MQTT ingest silently times out there.
+# Must run before uvicorn builds the loop, so it stays at import time.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)

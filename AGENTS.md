@@ -167,7 +167,10 @@ class Alert(BaseModel):
 
 ## 6. Current Repository State (as of this document)
 
-> **Note (verified Oct 2 2026):** the M0 backend described below is **not present** in this working tree. `AGENTS.md`, `backend/app/__init__.py`, `backend/app/routers/__init__.py`, and the three placeholder READMEs are the only files on disk. The git repo has no commits. Treat §9 task prerequisites as unmet.
+> **Note (verified Oct 2 2026):** §6 previously claimed this backend was implemented when the repo
+> was in fact empty. It has since been rebuilt. Verified working: M0 vertical slice, sensors
+> registry (F-1), frame retention (F-2), and the detection skeleton (F-3) — all exercised against a
+> real MQTT broker and SQLite. Still unverified on Postgres itself; no Docker on the dev host.
 
 ```text
 prodos/
@@ -186,12 +189,23 @@ prodos/
 │       ├── mqtt.py               # mqtt_ingest_loop() + Broadcaster (WebSocket fan-out)
 │       └── routers/frames.py     # GET /frames/recent
 ├── scripts/fake_sensor.py        # simulated ESP32; flags: --evil-twin (clone after 15s), --deauth (60 deauth/s after 10s), --sensor ID, --host
-├── detection/README.md           # placeholder — Zaki & Omar's service
+├── .env.example                  # every Settings variable, documented
+├── detection/                    # F-3 skeleton — OWNED BY ZAKI & OMAR, do not modify
+│   ├── main.py                   # Detector base + DemoDeauthDetector; subscribes frames, publishes prodos/events
+│   ├── schemas.py                # byte-identical copy of backend/app/schemas.py
+│   ├── requirements.txt          # aiomqtt, pydantic only
+│   └── README.md                 # how to run + extend
 ├── firmware/README.md            # placeholder — Ammar's ESP32 code
 └── frontend/README.md            # placeholder — Arsany's React app
 ```
 
-Implemented and working: monorepo, docker-compose, MQTT ingestion → Postgres, `/frames/recent`, `/ws/frames` live stream, fake sensor with attack simulation modes.
+Implemented and working: monorepo, docker-compose, MQTT ingestion → Postgres, `/frames/recent`,
+`/ws/frames` live stream, `/sensors` registry, hourly frame retention, detection skeleton, fake
+sensor with attack simulation modes.
+
+Windows note: `aiomqtt` needs `add_reader`/`add_writer`, which the default ProactorEventLoop does
+not implement. Both `backend/app/main.py` and `detection/main.py` set the selector event loop
+policy at startup. Do not remove those lines — without them MQTT silently times out.
 
 Run instructions (Windows hybrid mode):
 

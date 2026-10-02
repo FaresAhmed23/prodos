@@ -1,4 +1,4 @@
-# CONTRACT — must stay in sync with detection/schemas.py
+# CONTRACT — must stay in sync
 
 from __future__ import annotations
 
