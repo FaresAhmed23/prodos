@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .database import Base, engine
 from .mqtt import frames_broadcaster, mqtt_ingest_loop, sensor_presence_loop
+from .retention import retention_loop
 from .routers import frames, sensors
 
 logging.basicConfig(level=logging.INFO)
@@ -19,6 +20,7 @@ async def lifespan(app: FastAPI):
     tasks = [
         asyncio.create_task(mqtt_ingest_loop()),
         asyncio.create_task(sensor_presence_loop()),
+        asyncio.create_task(retention_loop()),
     ]
     try:
         yield
