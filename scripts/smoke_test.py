@@ -1,4 +1,4 @@
-"""End-to-end smoke test. One command, no Docker, no Postgres.
+"""End-to-end smoke test. One command, no Docker.
 
 Runs the whole pipeline as separate OS processes, talking only over MQTT and
 HTTP -- the same way the team runs it in dev:
@@ -6,14 +6,16 @@ HTTP -- the same way the team runs it in dev:
     fake_sensor.py --deauth  ->  broker  ->  backend (uvicorn)
                                        ->  detection engine
     detection -> prodos/events
-    backend   -> SQLite + /frames/recent + /ws/frames
+    backend   -> database + /frames/recent + /ws/frames
 
-Uses SQLite and an in-process amqtt broker in place of Postgres/Mosquitto, so it
-runs on a bare Windows box. It proves the wiring and the payload contracts; it
-does NOT prove Postgres-specific SQL. Run the real stack for that.
+By default it uses SQLite and an in-process amqtt broker, so it runs on a bare
+Windows box with nothing installed. Set SMOKE_DATABASE_URL to run the exact same
+checks against a real Postgres instead:
+
+    $env:SMOKE_DATABASE_URL="postgresql+psycopg://prodos@127.0.0.1:5433/prodos"
+    backend\\.venv\\Scripts\\python.exe scripts\\smoke_test.py
 
     pip install -r backend/requirements-dev.txt
-    backend\\.venv\\Scripts\\python.exe scripts\\smoke_test.py
 """
 
 import asyncio
@@ -111,8 +113,18 @@ async def main() -> int:
               "    backend\\.venv\\Scripts\\python.exe -m pip install -r backend\\requirements-dev.txt")
         return 2
 
-    if os.path.exists(DB):
-        os.remove(DB)
+    db_url = os.environ.get("SMOKE_DATABASE_URL", f"sqlite:///{DB}")
+    if db_url.startswith("sqlite"):
+        if os.path.exists(DB):
+            os.remove(DB)
+    else:
+        # real Postgres: start from an empty schema so the checks below can
+        # assume a clean database the way the SQLite branch assumes a clean file
+        import psycopg
+        with psycopg.connect(db_url.replace("+psycopg", ""), autocommit=True) as pg:
+            pg.execute("DROP SCHEMA public CASCADE")
+            pg.execute("CREATE SCHEMA public")
+        check("postgres: schema reset", True, db_url.split("@")[-1])
 
     ready, state = asyncio.Event(), {}
     threading.Thread(target=run_broker, args=({
@@ -127,7 +139,7 @@ async def main() -> int:
         return 1
     check("broker: amqtt on 127.0.0.1:1883", True)
 
-    env = dict(os.environ, DATABASE_URL=f"sqlite:///{DB}",
+    env = dict(os.environ, DATABASE_URL=db_url,
                MQTT_HOST="127.0.0.1", MQTT_PORT="1883", PORT="8123")
 
     log_path = os.path.join(REPO, "_smoke_server.log")

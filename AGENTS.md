@@ -170,8 +170,8 @@ class Alert(BaseModel):
 > **Note (verified Oct 2 2026):** §6 previously claimed this backend was implemented when the repo
 > was in fact empty. It has since been rebuilt. Verified working: M0 vertical slice, sensors
 > registry (F-1), frame retention (F-2), detection skeleton (F-3), and the event→alert pipeline
-> (F-4) — all exercised against a real MQTT broker and SQLite, with every service running as its
-> own process. Still unverified on Postgres itself; no Docker on the dev host.
+> (F-4) — all exercised against a real MQTT broker and **PostgreSQL 16.10**, with every service
+> running as its own process. SQLite remains supported for fast, dependency-free runs.
 
 ```text
 prodos/
@@ -187,7 +187,7 @@ prodos/
 │       ├── main.py               # FastAPI app: lifespan (create_all + mqtt tasks), CORS, /health, /ws/frames, /ws/alerts
 │       ├── config.py             # Settings: database_url, mqtt_host/port, mqtt_topic_frames, mqtt_topic_events
 │       ├── schemas.py            # contracts above (WiFiFrame, FrameBatch, DetectionEvent, Alert, EventOut, AlertUpdate)
-│       ├── database.py           # engine + SessionLocal
+│       ├── database.py           # engine + SessionLocal (pins the Postgres session to UTC)
 │       ├── models.py             # Frame, Event, Alert, Sensor SQLAlchemy tables
 │       ├── mqtt.py               # mqtt_ingest_loop() + events_ingest_loop() + Broadcaster fan-out
 │       ├── alerts.py             # DetectionEvent -> stored Event -> generated Alert
@@ -196,7 +196,7 @@ prodos/
 │       │   └── template_provider.py  # offline, deterministic, jargon-free (the floor)
 │       └── routers/              # frames.py, sensors.py, events.py, alerts.py
 ├── scripts/fake_sensor.py        # simulated ESP32; flags: --evil-twin (clone after 15s), --deauth (60 deauth/s after 10s), --sensor ID, --host
-├── scripts/smoke_test.py         # Docker-free end-to-end check of the whole pipeline
+├── scripts/smoke_test.py         # Docker-free end-to-end check; SMOKE_DATABASE_URL targets a real Postgres
 ├── .env.example                  # every Settings variable, documented
 ├── detection/                    # F-3 skeleton — OWNED BY ZAKI & OMAR, do not modify
 │   ├── main.py                   # Detector base + DemoDeauthDetector; subscribes frames, publishes prodos/events
@@ -253,9 +253,51 @@ python ..\scripts\smoke_test.py        # ~30s, prints PASS/FAIL per check
 
 It covers sensor CRUD, ingest, MAC normalization, the retention-compatible frame query, the live
 `/ws/frames` push, and the full F-4 chain (event ingested → alert generated → `PATCH` transition →
-`/ws/alerts` push). It does **not** verify Postgres-specific SQL. Every statement was compiled
-against the Postgres dialect and is dialect-identical, so the SQL is portable; what remains
-unproven on Postgres is runtime behaviour.
+`/ws/alerts` push).
+
+### Running the same checks against a real Postgres
+
+SQLite is the default because it needs nothing installed. Point `SMOKE_DATABASE_URL` at a Postgres
+instance to run the identical 27 checks against it — this is what verified the retention purge,
+the batched delete, and the timestamptz round-trip for real:
+
+```powershell
+$env:SMOKE_DATABASE_URL = "postgresql+psycopg://prodos@127.0.0.1:5433/prodos"
+backend\.venv\Scripts\python.exe scripts\smoke_test.py
+```
+
+The script drops and recreates the `public` schema first, so point it only at a scratch database.
+
+No admin rights and no Docker? EDB publishes a portable binaries zip that runs without a Windows
+service, so a throwaway cluster is four commands (this is how the above was verified):
+
+```powershell
+$bin = "$env:TEMP\opencode\pgsql\pgsql\bin"
+Invoke-WebRequest -Uri https://get.enterprisedb.com/postgresql/postgresql-16.10-1-windows-x64-binaries.zip -OutFile "$env:TEMP\pg16.zip"
+Expand-Archive "$env:TEMP\pg16.zip" "$env:TEMP\pgsql" -Force
+& "$bin\initdb.exe" -D "$env:TEMP\pgdata" -U prodos --auth=trust --encoding=UTF8 --locale=C
+Start-Process "$bin\postgres.exe" -ArgumentList "-D","$env:TEMP\pgdata","-p","5433" -WindowStyle Hidden
+& "$bin\createdb.exe" -h 127.0.0.1 -p 5433 -U prodos prodos
+```
+
+Start it with `Start-Process`, not `pg_ctl start`: `pg_ctl` leaves the server attached to the
+console, so PowerShell blocks on it and killing the shell kills the database.
+
+### One Postgres-vs-SQLite difference, handled
+
+`database.py` passes `connect_args={"options": "-c timezone=UTC"}` for Postgres URLs. Postgres
+renders `TIMESTAMPTZ` in the *session's* TimeZone, so on this Cairo host the API returned
+`2026-10-02T17:25:14.123669+03:00` — the correct instant, but a different string than a UTC host
+would produce, and a violation of the timezone-aware-UTC convention. Pinning the session zone at
+connect time makes the JSON identical everywhere.
+
+Note this is set as a libpq connect option on purpose. An `event.listens_for(Engine, "connect")`
+hook that runs `SET TIME ZONE` *looks* correct but is silently undone: psycopg opens an implicit
+transaction for it, and the pool's rollback-on-return reverts the setting.
+
+SQLite still returns naive datetimes — it has no `timestamptz` — so `datetime` fields serialize
+without an offset there. Harmless for dev, but do not use SQLite output as the reference when
+building against the API.
 
 ## 7. Milestones
 
@@ -331,10 +373,10 @@ Do:
 Accept: run fake sensor `--deauth` + detection stub → alert row exists in Postgres, `GET /alerts` returns it, a connected `/ws/alerts` client receives it within 5 seconds of the event's `detected_at`.
 
 Met: measured 0.02–0.25s from `created_at` to `/ws/alerts` delivery, every service running as its
-own process. `scripts/smoke_test.py` now asserts this chain (26 checks). `GET /alerts` filters by
+own process. `scripts/smoke_test.py` now asserts this chain (27 checks). `GET /alerts` filters by
 status; `PATCH /alerts/{id}` accepts only `acknowledged`/`resolved` and rejects `new` with 422;
 unknown id is 404. Replaying a `DetectionEvent` with a duplicate `event_id` does not create a
-second alert.
+second alert. Verified on PostgreSQL 16.10.
 
 ### F-5 · AI explanation layer v1 (template + LLM behind one interface) — Priority: HIGH (M3 core, co-owned with Mohamed Ahmed)
 
