@@ -179,6 +179,8 @@ prodos/
 ├── backend/
 │   ├── Dockerfile
 │   ├── requirements.txt          # fastapi, uvicorn[standard], sqlalchemy, psycopg[binary], pydantic, pydantic-settings, aiomqtt
+│   ├── requirements-dev.txt      # amqtt + websockets, only for scripts/smoke_test.py
+│   ├── run.py                    # Windows-safe uvicorn entrypoint (selector event loop) — use this
 │   └── app/
 │       ├── __init__.py
 │       ├── main.py               # FastAPI app: lifespan (create_all + mqtt task), CORS, /health, /ws/frames
@@ -189,6 +191,7 @@ prodos/
 │       ├── mqtt.py               # mqtt_ingest_loop() + Broadcaster (WebSocket fan-out)
 │       └── routers/frames.py     # GET /frames/recent
 ├── scripts/fake_sensor.py        # simulated ESP32; flags: --evil-twin (clone after 15s), --deauth (60 deauth/s after 10s), --sensor ID, --host
+├── scripts/smoke_test.py         # Docker-free end-to-end check of the whole pipeline
 ├── .env.example                  # every Settings variable, documented
 ├── detection/                    # F-3 skeleton — OWNED BY ZAKI & OMAR, do not modify
 │   ├── main.py                   # Detector base + DemoDeauthDetector; subscribes frames, publishes prodos/events
@@ -203,9 +206,14 @@ Implemented and working: monorepo, docker-compose, MQTT ingestion → Postgres, 
 `/ws/frames` live stream, `/sensors` registry, hourly frame retention, detection skeleton, fake
 sensor with attack simulation modes.
 
-Windows note: `aiomqtt` needs `add_reader`/`add_writer`, which the default ProactorEventLoop does
-not implement. Both `backend/app/main.py` and `detection/main.py` set the selector event loop
-policy at startup. Do not remove those lines — without them MQTT silently times out.
+Windows note (do not "clean this up"): `aiomqtt` drives its socket via `add_reader`/`add_writer`,
+which `ProactorEventLoop` does not implement, so MQTT ingest dies with `NotImplementedError` and
+every connection silently times out. uvicorn 0.54 hardcodes `ProactorEventLoop` on Windows and
+ignores the event-loop policy entirely, so the two entrypoints fix it differently and both fixes
+are required:
+
+- `backend/run.py` passes `loop="run:selector_or_default"` to uvicorn.
+- `detection/main.py` calls `asyncio.run()` itself, so it sets `WindowsSelectorEventLoopPolicy`.
 
 Run instructions (Windows hybrid mode):
 
@@ -214,8 +222,9 @@ docker compose up -d db mosquitto
 cd backend
 python -m venv .venv
 .venv\Scripts\activate
-pip install -r requirements.txt paho-mqtt
-uvicorn app.main:app --reload
+pip install -r requirements.txt
+
+python run.py --reload            # NOT `uvicorn app.main:app` — see Windows note
 
 # second terminal, repo root, venv active:
 python scripts/fake_sensor.py          # or --deauth / --evil-twin
@@ -224,6 +233,22 @@ python scripts/fake_sensor.py          # or --deauth / --evil-twin
 Invoke-RestMethod http://localhost:8000/health
 Invoke-RestMethod "http://localhost:8000/frames/recent?limit=5"
 ```
+
+### Verifying without Docker
+
+Docker Desktop is not required to check the wiring. This runs the real backend (uvicorn), the real
+detection engine, and the real fake sensor as separate processes over MQTT/HTTP, using SQLite and
+an in-process broker in place of Postgres/Mosquitto:
+
+```powershell
+.venv\Scripts\pip install -r requirements-dev.txt
+python ..\scripts\smoke_test.py        # ~30s, prints PASS/FAIL per check
+```
+
+It covers sensor CRUD, ingest, MAC normalization, the retention-compatible frame query, the live
+`/ws/frames` push, and confirms `/alerts` + `/events` are absent until F-4. It does **not** verify
+Postgres-specific SQL. Every statement was compiled against the Postgres dialect and is
+dialect-identical, so the SQL is portable; what remains unproven on Postgres is runtime behaviour.
 
 ## 7. Milestones
 

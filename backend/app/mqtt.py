@@ -8,7 +8,7 @@ from sqlalchemy import update
 from .config import settings
 from .database import SessionLocal
 from .models import Frame, Sensor, utcnow
-from .schemas import FrameBatch
+from .schemas import FrameBatch, FrameOut
 
 log = logging.getLogger(__name__)
 
@@ -71,21 +71,11 @@ async def _handle_message(topic: str, payload: bytes) -> None:
     await asyncio.to_thread(_store_batch, batch.sensor_id, rows, seen_at)
 
     for row in rows:
-        await frames_broadcaster.publish(
-            {
-                "sensor_id": row.sensor_id,
-                "received_at": row.received_at,
-                "batch_seq": row.batch_seq,
-                "channel": row.channel,
-                "frame_type": row.frame_type,
-                "src_mac": row.src_mac,
-                "dst_mac": row.dst_mac,
-                "bssid": row.bssid,
-                "ssid": row.ssid,
-                "rssi": row.rssi,
-                "seq_num": row.seq_num,
-            }
-        )
+        # Build the broadcast payload through FrameOut, not a hand-rolled dict:
+        # a raw datetime here is not JSON-serializable, so send_json raised
+        # TypeError and killed every live stream on the first frame. This also
+        # guarantees /ws/frames and /frames/recent emit identical JSON.
+        await frames_broadcaster.publish(FrameOut.model_validate(row).model_dump(mode="json"))
 
 
 def _expire_sensors(cutoff: datetime) -> None:
