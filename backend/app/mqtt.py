@@ -8,7 +8,8 @@ from sqlalchemy import update
 from .config import settings
 from .database import SessionLocal
 from .models import Frame, Sensor, utcnow
-from .schemas import FrameBatch, FrameOut
+from .schemas import Alert, DetectionEvent, FrameBatch, FrameOut
+from .alerts import handle_detection_event
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ class Broadcaster:
 
 
 frames_broadcaster = Broadcaster()
+alerts_broadcaster = Broadcaster()
 
 
 def _store_batch(sensor_id: str, frames: list[Frame], seen_at: datetime) -> None:
@@ -100,6 +102,33 @@ async def mqtt_ingest_loop() -> None:
             raise
         except Exception:
             log.exception("mqtt ingest failed; reconnecting in 5s")
+            await asyncio.sleep(5)
+
+
+async def _handle_event_message(payload: bytes) -> None:
+    event = DetectionEvent.model_validate_json(payload)
+    alert = await handle_detection_event(event)
+    if alert is None:
+        return
+    # Same JSON-first discipline as frames: a raw datetime here would raise
+    # inside send_json and kill the live alert stream on its first message.
+    await alerts_broadcaster.publish(
+        Alert.model_validate(alert).model_dump(mode="json")
+    )
+
+
+async def events_ingest_loop() -> None:
+    while True:
+        try:
+            async with aiomqtt.Client(settings.mqtt_host, settings.mqtt_port) as client:
+                log.info("events subscribed: %s", settings.mqtt_topic_events)
+                await client.subscribe(settings.mqtt_topic_events)
+                async for message in client.messages:
+                    await _handle_event_message(message.payload)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("event ingest failed; reconnecting in 5s")
             await asyncio.sleep(5)
 
 

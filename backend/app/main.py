@@ -6,9 +6,15 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import Base, engine
-from .mqtt import frames_broadcaster, mqtt_ingest_loop, sensor_presence_loop
+from .mqtt import (
+    alerts_broadcaster,
+    events_ingest_loop,
+    frames_broadcaster,
+    mqtt_ingest_loop,
+    sensor_presence_loop,
+)
 from .retention import retention_loop
-from .routers import frames, sensors
+from .routers import alerts, events, frames, sensors
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -19,6 +25,7 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     tasks = [
         asyncio.create_task(mqtt_ingest_loop()),
+        asyncio.create_task(events_ingest_loop()),
         asyncio.create_task(sensor_presence_loop()),
         asyncio.create_task(retention_loop()),
     ]
@@ -42,6 +49,8 @@ app.add_middleware(
 
 app.include_router(frames.router)
 app.include_router(sensors.router)
+app.include_router(events.router)
+app.include_router(alerts.router)
 
 
 @app.get("/health")
@@ -60,3 +69,16 @@ async def ws_frames(websocket: WebSocket) -> None:
         pass
     finally:
         frames_broadcaster.unsubscribe(queue)
+
+
+@app.websocket("/ws/alerts")
+async def ws_alerts(websocket: WebSocket) -> None:
+    await websocket.accept()
+    queue = alerts_broadcaster.subscribe()
+    try:
+        while True:
+            await websocket.send_json(await queue.get())
+    except WebSocketDisconnect:
+        pass
+    finally:
+        alerts_broadcaster.unsubscribe(queue)

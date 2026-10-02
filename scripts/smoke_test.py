@@ -163,20 +163,22 @@ async def main() -> int:
               str(patched))
 
         pushed: list[dict] = []
+        pushed_alerts: list[dict] = []
 
-        async def listen() -> None:
+        async def listen(url: str, sink: list[dict]) -> None:
             try:
-                async with websockets.connect(BASE.replace("http", "ws") + "/ws/frames") as ws:
+                async with websockets.connect(BASE.replace("http", "ws") + url) as ws:
                     end = time.monotonic() + RUN_S
                     while time.monotonic() < end:
                         try:
-                            pushed.append(json.loads(await asyncio.wait_for(ws.recv(), 0.5)))
+                            sink.append(json.loads(await asyncio.wait_for(ws.recv(), 0.5)))
                         except asyncio.TimeoutError:
                             pass
             except Exception as exc:
-                print(f"      ws client stopped: {type(exc).__name__}: {exc}")
+                print(f"      {url} client stopped: {type(exc).__name__}: {exc}")
 
-        ws_task = asyncio.create_task(listen())
+        ws_frames = asyncio.create_task(listen("/ws/frames", pushed))
+        ws_alerts = asyncio.create_task(listen("/ws/alerts", pushed_alerts))
 
         det = subprocess.Popen([PY, "main.py"], cwd=os.path.join(REPO, "detection"), env=env,
                                stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
@@ -189,7 +191,8 @@ async def main() -> int:
         children.append(sen)
         print(f"      sensor + detection running, waiting {RUN_S}s...")
         await asyncio.sleep(RUN_S)  # fixed sleep: a dead WS client must not truncate the run
-        ws_task.cancel()
+        ws_frames.cancel()
+        ws_alerts.cancel()
 
         st, frames = http("GET", "/frames/recent?limit=50")
         check("frames ingested and served over real HTTP", st == 200 and len(frames) > 0,
@@ -218,12 +221,29 @@ async def main() -> int:
                   {"id", "sensor_id", "received_at", "frame_type"} <= set(pushed[0]),
                   str(sorted(pushed[0]))[:80])
 
-        for path in ("/alerts", "/events"):
-            try:
-                code = http("GET", path, timeout=3)[0]
-            except (urllib.error.URLError, OSError):
-                code = 0
-            check(f"{path} absent as expected (F-4 not built yet)", code == 404, f"got {code}")
+        # --- F-4: detection event -> alert, over the same real processes ---
+        st, events = http("GET", "/events")
+        check("detection events ingested into the backend", st == 200 and len(events) > 0,
+              f"n={len(events) if events else 0}")
+        st, alerts = http("GET", "/alerts")
+        check("alerts generated from those events", st == 200 and len(alerts) > 0,
+              f"n={len(alerts) if alerts else 0}")
+        if alerts:
+            a = alerts[0]
+            check("alert explanation is non-empty plain language",
+                  bool(a["explanation"]) and bool(a["recommended_action"]))
+            check("alert starts with status new", a["status"] == "new", a["status"])
+            st, acked = http("PATCH", f"/alerts/{a['alert_id']}", {"status": "acknowledged"})
+            check("PATCH /alerts/{id} -> acknowledged", st == 200 and acked["status"] == "acknowledged",
+                  f"{st}")
+            st, _ = http("PATCH", f"/alerts/{a['alert_id']}", {"status": "new"})
+            check("PATCH rejects transition back to new (422)", st == 422, f"got {st}")
+        check("WS /ws/alerts pushed live alerts", len(pushed_alerts) > 0,
+              f"pushed={len(pushed_alerts)}")
+        if pushed_alerts:
+            check("alert push matches REST shape",
+                  {"alert_id", "event_id", "severity", "title", "status"}
+                  <= set(pushed_alerts[0]), str(sorted(pushed_alerts[0]))[:80])
 
     return 1 if failures else 0
 

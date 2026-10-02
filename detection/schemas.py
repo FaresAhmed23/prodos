@@ -72,6 +72,28 @@ class Alert(BaseModel):
     recommended_action: str
     status: AlertStatus = "new"
 
+    model_config = {"from_attributes": True}
+
+
+class EventOut(BaseModel):
+    event_id: str
+    event_type: EventType
+    detected_at: datetime
+    severity: int
+    confidence: float
+    sensor_ids: list[str]
+    details: dict
+    received_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AlertUpdate(BaseModel):
+    """PATCH body. Only the two transitions a client is allowed to make --
+    "new" is assigned by the backend, never by the caller."""
+
+    status: Literal["acknowledged", "resolved"]
+
 
 class FrameOut(BaseModel):
     id: int

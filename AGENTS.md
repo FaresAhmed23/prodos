@@ -162,15 +162,16 @@ class Alert(BaseModel):
 - `GET /health` → `{"status": "ok"}`
 - `GET /frames/recent?seconds=300&limit=50&frame_type=<opt>` → list of stored frames (newest first)
 - `WS /ws/frames` → live JSON frames as they're ingested
-- Planned (Fares's tasks): `GET/POST /sensors`, `GET /events`, `GET /alerts`, `PATCH /alerts/{id}` (acknowledge/resolve), `WS /ws/alerts`
+- `GET /events?limit=50&event_type=<opt>` · `GET /alerts?status=new&limit=50` · `PATCH /alerts/{alert_id}` with `{"status": "acknowledged" | "resolved"}` · `WS /ws/alerts` → live alerts
 - Auto-generated OpenAPI docs at `/docs`
 
 ## 6. Current Repository State (as of this document)
 
 > **Note (verified Oct 2 2026):** §6 previously claimed this backend was implemented when the repo
 > was in fact empty. It has since been rebuilt. Verified working: M0 vertical slice, sensors
-> registry (F-1), frame retention (F-2), and the detection skeleton (F-3) — all exercised against a
-> real MQTT broker and SQLite. Still unverified on Postgres itself; no Docker on the dev host.
+> registry (F-1), frame retention (F-2), detection skeleton (F-3), and the event→alert pipeline
+> (F-4) — all exercised against a real MQTT broker and SQLite, with every service running as its
+> own process. Still unverified on Postgres itself; no Docker on the dev host.
 
 ```text
 prodos/
@@ -183,13 +184,17 @@ prodos/
 │   ├── run.py                    # Windows-safe uvicorn entrypoint (selector event loop) — use this
 │   └── app/
 │       ├── __init__.py
-│       ├── main.py               # FastAPI app: lifespan (create_all + mqtt task), CORS, /health, /ws/frames
-│       ├── config.py             # Settings: database_url, mqtt_host/port, mqtt_topic_frames
-│       ├── schemas.py            # contracts above (WiFiFrame, FrameBatch, DetectionEvent, Alert)
+│       ├── main.py               # FastAPI app: lifespan (create_all + mqtt tasks), CORS, /health, /ws/frames, /ws/alerts
+│       ├── config.py             # Settings: database_url, mqtt_host/port, mqtt_topic_frames, mqtt_topic_events
+│       ├── schemas.py            # contracts above (WiFiFrame, FrameBatch, DetectionEvent, Alert, EventOut, AlertUpdate)
 │       ├── database.py           # engine + SessionLocal
-│       ├── models.py             # Frame, Event, Alert SQLAlchemy tables
-│       ├── mqtt.py               # mqtt_ingest_loop() + Broadcaster (WebSocket fan-out)
-│       └── routers/frames.py     # GET /frames/recent
+│       ├── models.py             # Frame, Event, Alert, Sensor SQLAlchemy tables
+│       ├── mqtt.py               # mqtt_ingest_loop() + events_ingest_loop() + Broadcaster fan-out
+│       ├── alerts.py             # DetectionEvent -> stored Event -> generated Alert
+│       ├── ai/                   # co-owned with Mohamed Ahmed — explanation layer
+│       │   ├── explanation.py    # Explanation dataclass + ExplanationProvider protocol
+│       │   └── template_provider.py  # offline, deterministic, jargon-free (the floor)
+│       └── routers/              # frames.py, sensors.py, events.py, alerts.py
 ├── scripts/fake_sensor.py        # simulated ESP32; flags: --evil-twin (clone after 15s), --deauth (60 deauth/s after 10s), --sensor ID, --host
 ├── scripts/smoke_test.py         # Docker-free end-to-end check of the whole pipeline
 ├── .env.example                  # every Settings variable, documented
@@ -203,8 +208,9 @@ prodos/
 ```
 
 Implemented and working: monorepo, docker-compose, MQTT ingestion → Postgres, `/frames/recent`,
-`/ws/frames` live stream, `/sensors` registry, hourly frame retention, detection skeleton, fake
-sensor with attack simulation modes.
+`/ws/frames` live stream, `/sensors` registry, hourly frame retention, `prodos/events` subscription,
+`/events`, `/alerts`, `PATCH /alerts/{id}`, `/ws/alerts` live push, offline template explanations,
+detection skeleton, fake sensor with attack simulation modes.
 
 Windows note (do not "clean this up"): `aiomqtt` drives its socket via `add_reader`/`add_writer`,
 which `ProactorEventLoop` does not implement, so MQTT ingest dies with `NotImplementedError` and
@@ -246,9 +252,10 @@ python ..\scripts\smoke_test.py        # ~30s, prints PASS/FAIL per check
 ```
 
 It covers sensor CRUD, ingest, MAC normalization, the retention-compatible frame query, the live
-`/ws/frames` push, and confirms `/alerts` + `/events` are absent until F-4. It does **not** verify
-Postgres-specific SQL. Every statement was compiled against the Postgres dialect and is
-dialect-identical, so the SQL is portable; what remains unproven on Postgres is runtime behaviour.
+`/ws/frames` push, and the full F-4 chain (event ingested → alert generated → `PATCH` transition →
+`/ws/alerts` push). It does **not** verify Postgres-specific SQL. Every statement was compiled
+against the Postgres dialect and is dialect-identical, so the SQL is portable; what remains
+unproven on Postgres is runtime behaviour.
 
 ## 7. Milestones
 
@@ -309,7 +316,7 @@ Do (one-time skeleton inside `detection/` — this is the ONLY permitted write t
 
 Accept: fake sensor `--deauth` produces `DetectionEvent` messages on the topic within seconds of the flood starting.
 
-### F-4 · Event ingestion + alerts pipeline + /ws/alerts — Priority: HIGH (this is M2 core)
+### F-4 · Event ingestion + alerts pipeline + /ws/alerts — Priority: HIGH (this is M2 core) — **DONE**
 
 **Why:** completes the backend's second data path; this is where the <5s alert latency is earned.
 
@@ -323,6 +330,12 @@ Do:
 
 Accept: run fake sensor `--deauth` + detection stub → alert row exists in Postgres, `GET /alerts` returns it, a connected `/ws/alerts` client receives it within 5 seconds of the event's `detected_at`.
 
+Met: measured 0.02–0.25s from `created_at` to `/ws/alerts` delivery, every service running as its
+own process. `scripts/smoke_test.py` now asserts this chain (26 checks). `GET /alerts` filters by
+status; `PATCH /alerts/{id}` accepts only `acknowledged`/`resolved` and rejects `new` with 422;
+unknown id is 404. Replaying a `DetectionEvent` with a duplicate `event_id` does not create a
+second alert.
+
 ### F-5 · AI explanation layer v1 (template + LLM behind one interface) — Priority: HIGH (M3 core, co-owned with Mohamed Ahmed)
 
 **Why:** proposal objective #3 — plain-language explanations a café owner understands.
@@ -330,13 +343,14 @@ Accept: run fake sensor `--deauth` + detection stub → alert row exists in Post
 Do:
 
 - New package `backend/app/ai/` with:
-  - `explanation.py`: an `ExplanationProvider` protocol: `async def explain(event: DetectionEvent) -> Explanation(title: str, explanation: str, recommended_action: str)`.
-  - `template_provider.py`: deterministic, offline fallback. Plain language, zero jargon, severity-aware phrasing. Examples to match tone:
-    - `deauth_flood`: title "Someone is trying to knock customers off your WiFi", explanation "A device near your premises is repeatedly sending disconnect signals to your WiFi. This is often done to force customers to reconnect to a fake network copy. We are monitoring it closely.", action "Check the list of alerts. If customers complain they keep getting disconnected, consider temporarily changing your WiFi password."
-    - `evil_twin`: title "A copy of your WiFi network has appeared", explanation "Someone nearby is broadcasting a network with the same name as yours. Customers connecting to it by mistake could have their data exposed.", action "Ask staff to warn customers to verify the network name before connecting. We will keep tracking the fake network."
+  - `explanation.py`: an `ExplanationProvider` protocol: `async def explain(event: DetectionEvent) -> Explanation(title: str, explanation: str, recommended_action: str)`. **Already done in F-4.**
+  - `template_provider.py`: deterministic, offline fallback. Plain language, zero jargon, severity-aware phrasing. **Already done in F-4**, which also wired it in behind `alerts.provider`. Titles it produces:
+    - `deauth_flood`: "Someone is trying to knock customers off your WiFi"
+    - `evil_twin`: "A copy of your WiFi network has appeared"
+    - `rogue_ap`: "An unknown wireless network appeared nearby"
   - `llm_provider.py`: same interface; calls an LLM chat-completions API. Provider-agnostic: base URL + model + key from env (`LLM_API_BASE`, `LLM_MODEL`, `LLM_API_KEY`). System prompt encodes: audience is a non-technical small-business owner; ≤3 short sentences; no technical jargon (never say "deauthentication frame", "BSSID", "802.11"); always end with one concrete recommended action; severity 1–3 calm tone, 8–10 urgent but not panic.
-  - Selection logic: use LLM if `LLM_API_KEY` set, else template. LLM failure (timeout 5s, error) must fall back to template — alert delivery never blocks on AI.
-- F-4's alert generation calls this provider.
+  - Selection logic: set `alerts.provider` to the LLM provider when `LLM_API_KEY` is present. The `try/except` around `provider.explain` already exists in `alerts.py` and falls back to the template, so alert delivery never blocks on AI.
+- F-4's alert generation already calls this provider.
 - Logging for future fine-tuning (important — Mohamed Ahmed needs this): every generated explanation is appended to table `explanation_logs` (new model): `event` (JSON), `provider_used`, `prompt` (text, null for template), `output` (JSON), `created_at`. This is the v2 fine-tuning dataset.
 
 Accept: with no API key, alerts carry template explanations matching the tone above; with key set, LLM output used; with key set but server unreachable, alerts still delivered with template text and a warning logged; `explanation_logs` grows one row per alert.

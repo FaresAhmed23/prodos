@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     mqtt_host: str = "localhost"
     mqtt_port: int = 1883
     mqtt_topic_frames: str = "prodos/sensors/+/frames"
+    mqtt_topic_events: str = "prodos/events"
     retention_days: int = 7
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
