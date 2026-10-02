@@ -170,8 +170,8 @@ class Alert(BaseModel):
 > **Note (verified Oct 2 2026):** §6 previously claimed this backend was implemented when the repo
 > was in fact empty. It has since been rebuilt. Verified working: M0 vertical slice, sensors
 > registry (F-1), frame retention (F-2), detection skeleton (F-3), and the event→alert pipeline
-> (F-4) — all exercised against a real MQTT broker and **PostgreSQL 16.10**, with every service
-> running as its own process. SQLite remains supported for fast, dependency-free runs.
+> (F-4) — all exercised against the real thing: **PostgreSQL 16.10**, **Mosquitto 2.1.2**, every
+> service a separate process. SQLite + in-process amqtt remain supported for dependency-free runs.
 
 ```text
 prodos/
@@ -196,7 +196,7 @@ prodos/
 │       │   └── template_provider.py  # offline, deterministic, jargon-free (the floor)
 │       └── routers/              # frames.py, sensors.py, events.py, alerts.py
 ├── scripts/fake_sensor.py        # simulated ESP32; flags: --evil-twin (clone after 15s), --deauth (60 deauth/s after 10s), --sensor ID, --host
-├── scripts/smoke_test.py         # Docker-free end-to-end check; SMOKE_DATABASE_URL targets a real Postgres
+├── scripts/smoke_test.py         # Docker-free end-to-end check; SMOKE_DATABASE_URL / SMOKE_BROKER swap in the real deps
 ├── .env.example                  # every Settings variable, documented
 ├── detection/                    # F-3 skeleton — OWNED BY ZAKI & OMAR, do not modify
 │   ├── main.py                   # Detector base + DemoDeauthDetector; subscribes frames, publishes prodos/events
@@ -255,21 +255,28 @@ It covers sensor CRUD, ingest, MAC normalization, the retention-compatible frame
 `/ws/frames` push, and the full F-4 chain (event ingested → alert generated → `PATCH` transition →
 `/ws/alerts` push).
 
-### Running the same checks against a real Postgres
+### Running the same checks against the real dependencies
 
-SQLite is the default because it needs nothing installed. Point `SMOKE_DATABASE_URL` at a Postgres
-instance to run the identical 27 checks against it — this is what verified the retention purge,
-the batched delete, and the timestamptz round-trip for real:
+SQLite + in-process amqtt is the default because it needs nothing installed. Two env vars swap in
+the real thing, and they can be combined — this is the configuration the pilot will run:
 
 ```powershell
+$env:SMOKE_BROKER = "mosquitto"     # use a broker already listening on 1883
 $env:SMOKE_DATABASE_URL = "postgresql+psycopg://prodos@127.0.0.1:5433/prodos"
 backend\.venv\Scripts\python.exe scripts\smoke_test.py
 ```
 
-The script drops and recreates the `public` schema first, so point it only at a scratch database.
+The script drops and recreates the `public` schema when pointed at Postgres, so use a scratch
+database only. With `SMOKE_BROKER` set it skips spawning amqtt and just checks that 1883 accepts
+connections, so start the broker yourself first:
 
-No admin rights and no Docker? EDB publishes a portable binaries zip that runs without a Windows
-service, so a throwaway cluster is four commands (this is how the above was verified):
+```powershell
+mosquitto -c infra\mosquitto\mosquitto.conf -v
+```
+
+No admin rights and no Docker? Both dependencies can be had without either. Mosquitto installs
+user-level via scoop (it extracts the installer rather than running it, so no UAC):
+`scoop install mosquitto`. For Postgres use EDB's portable binaries zip — no Windows service:
 
 ```powershell
 $bin = "$env:TEMP\opencode\pgsql\pgsql\bin"
@@ -280,24 +287,34 @@ Start-Process "$bin\postgres.exe" -ArgumentList "-D","$env:TEMP\pgdata","-p","54
 & "$bin\createdb.exe" -h 127.0.0.1 -p 5433 -U prodos prodos
 ```
 
-Start it with `Start-Process`, not `pg_ctl start`: `pg_ctl` leaves the server attached to the
+Start Postgres with `Start-Process`, not `pg_ctl start`: `pg_ctl` leaves the server attached to the
 console, so PowerShell blocks on it and killing the shell kills the database.
 
-### One Postgres-vs-SQLite difference, handled
+Verified green on Mosquitto 2.1.2 + Postgres 16.10: `smoke_test.py` 27/27 and the F-4 acceptance
+suite 23/23, including the replay-dedup and status-transition checks. Re-ran on SQLite + amqtt
+afterwards to confirm the defaults are untouched.
 
-`database.py` passes `connect_args={"options": "-c timezone=UTC"}` for Postgres URLs. Postgres
-renders `TIMESTAMPTZ` in the *session's* TimeZone, so on this Cairo host the API returned
+### Two things the real brokers disagreed about
+
+**Timezone.** `database.py` passes `connect_args={"options": "-c timezone=UTC"}` for Postgres URLs.
+Postgres renders `TIMESTAMPTZ` in the *session's* TimeZone, so on this Cairo host the API returned
 `2026-10-02T17:25:14.123669+03:00` — the correct instant, but a different string than a UTC host
-would produce, and a violation of the timezone-aware-UTC convention. Pinning the session zone at
-connect time makes the JSON identical everywhere.
+would produce, and a violation of the timezone-aware-UTC convention. SQLite never showed it,
+because it has no `timestamptz` and was returning naive values all along.
 
-Note this is set as a libpq connect option on purpose. An `event.listens_for(Engine, "connect")`
-hook that runs `SET TIME ZONE` *looks* correct but is silently undone: psycopg opens an implicit
-transaction for it, and the pool's rollback-on-return reverts the setting.
+Note this is set as a libpq connect option on purpose. An
+`event.listens_for(Engine, "connect")` hook that runs `SET TIME ZONE` *looks* correct — it passes a
+`SHOW timezone` check taken inside the hook — and is then silently undone, because psycopg opens an
+implicit transaction for the statement and the pool's rollback-on-return reverts it.
 
-SQLite still returns naive datetimes — it has no `timestamptz` — so `datetime` fields serialize
-without an offset there. Harmless for dev, but do not use SQLite output as the reference when
-building against the API.
+**QoS is 0 everywhere, and that is a live risk.** `fake_sensor.py` publishes frames at `qos=0`, and
+`detection/main.py` publishes `prodos/events` at the aiomqtt default of QoS 0; the backend
+subscribes at the default too. The Mosquitto log confirms `q0` on every message. QoS 0 is
+defensible for frame batches — high rate, best effort, and a dropped batch is tolerable. It is *not*
+defensible for `prodos/events`: a lost UDP packet means a lost security alert, silently, on café
+wi-fi. Fixing it needs `detection/main.py` to publish at QoS 1, and a subscription QoS can only
+lower delivery, never raise it. That file belongs to Zaki and Omar, so it is raised rather than
+changed. §5 should pin the intended QoS per topic either way.
 
 ## 7. Milestones
 
@@ -376,7 +393,7 @@ Met: measured 0.02–0.25s from `created_at` to `/ws/alerts` delivery, every ser
 own process. `scripts/smoke_test.py` now asserts this chain (27 checks). `GET /alerts` filters by
 status; `PATCH /alerts/{id}` accepts only `acknowledged`/`resolved` and rejects `new` with 422;
 unknown id is 404. Replaying a `DetectionEvent` with a duplicate `event_id` does not create a
-second alert. Verified on PostgreSQL 16.10.
+second alert. Verified on PostgreSQL 16.10 and Mosquitto 2.1.2.
 
 ### F-5 · AI explanation layer v1 (template + LLM behind one interface) — Priority: HIGH (M3 core, co-owned with Mohamed Ahmed)
 

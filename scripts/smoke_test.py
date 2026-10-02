@@ -15,6 +15,12 @@ checks against a real Postgres instead:
     $env:SMOKE_DATABASE_URL="postgresql+psycopg://prodos@127.0.0.1:5433/prodos"
     backend\\.venv\\Scripts\\python.exe scripts\\smoke_test.py
 
+Set SMOKE_BROKER=mosquitto to use a broker you started yourself on port 1883
+instead of the in-process amqtt one:
+
+    mosquitto -c infra\\mosquitto\\mosquitto.conf -v
+    $env:SMOKE_BROKER="mosquitto"
+
     pip install -r backend/requirements-dev.txt
 """
 
@@ -126,18 +132,30 @@ async def main() -> int:
             pg.execute("CREATE SCHEMA public")
         check("postgres: schema reset", True, db_url.split("@")[-1])
 
-    ready, state = asyncio.Event(), {}
-    threading.Thread(target=run_broker, args=({
-        "listeners": {"default": {"type": "tcp", "bind": "127.0.0.1:1883"}},
-        "auth": {"allow-anonymous": True, "plugins": ["auth_anonymous"]},
-        "topic-check": {"enabled": False},
-    }, ready, state), daemon=True).start()
-    while not ready.is_set():
-        await asyncio.sleep(0.05)
-    if not state.get("ok"):
-        check("broker up", False)
-        return 1
-    check("broker: amqtt on 127.0.0.1:1883", True)
+    if os.environ.get("SMOKE_BROKER", "amqtt").lower() == "amqtt":
+        ready, state = asyncio.Event(), {}
+        threading.Thread(target=run_broker, args=({
+            "listeners": {"default": {"type": "tcp", "bind": "127.0.0.1:1883"}},
+            "auth": {"allow-anonymous": True, "plugins": ["auth_anonymous"]},
+            "topic-check": {"enabled": False},
+        }, ready, state), daemon=True).start()
+        while not ready.is_set():
+            await asyncio.sleep(0.05)
+        if not state.get("ok"):
+            check("broker up", False)
+            return 1
+        check("broker: amqtt (in-process) on 127.0.0.1:1883", True)
+    else:
+        # Real broker (Mosquitto). Lets the same checks run against the broker
+        # the pilot will actually use, rather than an in-process stand-in.
+        import socket
+        try:
+            with socket.create_connection(("127.0.0.1", 1883), timeout=5):
+                pass
+            check("broker: external mosquitto on 127.0.0.1:1883", True)
+        except OSError as ex:
+            check("broker: external mosquitto reachable", False, str(ex))
+            return 1
 
     env = dict(os.environ, DATABASE_URL=db_url,
                MQTT_HOST="127.0.0.1", MQTT_PORT="1883", PORT="8123")
