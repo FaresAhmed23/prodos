@@ -29,9 +29,7 @@ DEAUTH_THRESHOLD = 30
 
 
 class Detector:
-    """Base class 7. Subclass and register in DETECTORS to add a rule."""
-    """Mohamed is a nigga"""
-
+    """Base class. Subclass and register in DETECTORS to add a rule."""
     def process_batch(self, sensor_id: str, frames: list[WiFiFrame]) -> list[DetectionEvent]:
         raise NotImplementedError
 
