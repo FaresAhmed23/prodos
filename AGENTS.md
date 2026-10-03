@@ -336,14 +336,35 @@ Note this is set as a libpq connect option on purpose. An
 `SHOW timezone` check taken inside the hook — and is then silently undone, because psycopg opens an
 implicit transaction for the statement and the pool's rollback-on-return reverts it.
 
-**QoS is 0 everywhere, and that is a live risk.** `fake_sensor.py` publishes frames at `qos=0`, and
-`detection/main.py` publishes `prodos/events` at the aiomqtt default of QoS 0; the backend
-subscribes at the default too. The Mosquitto log confirms `q0` on every message. QoS 0 is
-defensible for frame batches — high rate, best effort, and a dropped batch is tolerable. It is *not*
-defensible for `prodos/events`: a lost UDP packet means a lost security alert, silently, on café
-wi-fi. Fixing it needs `detection/main.py` to publish at QoS 1, and a subscription QoS can only
-lower delivery, never raise it. That file belongs to Zaki and Omar, so it is raised rather than
-changed. §5 should pin the intended QoS per topic either way.
+**QoS: the backend half is done, the detection half is still open (PRO-16).** `fake_sensor.py`
+publishes frames at `qos=0` and `detection/main.py` publishes `prodos/events` at the aiomqtt
+default of QoS 0. The backend now subscribes `prodos/events` at `qos=1` (`mqtt.py`,
+`events_ingest_loop`) while deliberately leaving the frame subscription at QoS 0 — ~200 frames/sec
+per sensor is high-rate best-effort, a lost batch is tolerable, and QoS 1 would make the broker
+queue against a slow consumer. A lost `DetectionEvent` is a silently dropped security alert, so it
+is worth the retry.
+
+**This is still inert end-to-end, and that is not a bug in the change.** MQTT delivers at
+`min(publish QoS, granted QoS)` and a SUBSCRIBE can only lower delivery, never raise it, so a q1
+subscription over a q0 publisher still arrives at q0. Verified both halves separately: the backend's
+SUBSCRIBE is granted at QoS 1 (`Mosquitto -v` prints `prodos/events (QoS 1)`), and a probe
+publishing at q1 is forwarded to the backend at `q1` and produces an alert. The moment
+`detection/main.py` publishes at QoS 1, delivery is guaranteed with no further backend work. That
+file belongs to Zaki and Omar, so it is left alone and raised as PRO-16. §5 should pin the intended
+QoS per topic either way.
+
+### Running the smoke test: it needs the broker to itself
+
+`smoke_test.py` assumes no other backend is subscribed to `prodos/events`. If a stray `run.py` is
+still connected to the same broker and database, it wins the insert race for each event, the smoke
+test's own backend hits the `event_id` dedup and returns `None`, and the check fails as
+`WS /ws/alerts pushed live alerts pushed=0`. That is the dedup behaving correctly against a second
+consumer, not a regression — but it looks exactly like one. Stop stray backends first:
+
+```powershell
+Stop-Process -Name python -Force
+```
+
 
 ## 7. Milestones
 

@@ -122,7 +122,17 @@ async def events_ingest_loop() -> None:
         try:
             async with aiomqtt.Client(settings.mqtt_host, settings.mqtt_port) as client:
                 log.info("events subscribed: %s", settings.mqtt_topic_events)
-                await client.subscribe(settings.mqtt_topic_events)
+                # QoS 1 on events, deliberately asymmetric with the frame
+                # subscription above. Frames stay QoS 0: ~200 frames/sec per sensor
+                # is high-rate best-effort, a lost batch is tolerable, and QoS 1
+                # would make the broker queue on a slow consumer. A lost DetectionEvent
+                # is a silently dropped security alert, so it is worth the retry.
+                #
+                # NOTE this is the subscriber's half only. MQTT delivers at
+                # min(publish QoS, granted QoS) and a subscribe can lower delivery but
+                # never raise it, so this stays inert until detection/main.py also
+                # publishes at QoS 1 -- that file belongs to Zaki and Omar (PRO-16).
+                await client.subscribe(settings.mqtt_topic_events, qos=1)
                 async for message in client.messages:
                     await _handle_event_message(message.payload)
         except asyncio.CancelledError:
