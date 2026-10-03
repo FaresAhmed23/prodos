@@ -1,0 +1,85 @@
+# Pilot deployment: everything on one host (Raspberry Pi 4 or a cloud VM).
+#
+#   cp .env.example .env      # then set POSTGRES_PASSWORD and, if you use an
+#                             # LLM, LLM_API_KEY. The .env is gitignored.
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d
+#
+# Differences from docker-compose.yml, and why each one exists:
+#
+#   * Postgres is NOT published to the host. In dev nothing else on the LAN
+#     needs it; here the port would be the pilot's weakest link.
+#   * Mosquitto IS published: the ESP32 sensors have no other way in.
+#   * The password comes from .env and is required, so a forgotten one fails
+#     loudly instead of silently deploying the dev `prodos:prodos` credential.
+#   * Mosquitto persists. PRO-16 moves prodos/events to QoS 1, and QoS 1
+#     redelivery only survives a restart if sessions do.
+#   * `unless-stopped` everywhere: a Pi that browns out should come back on its
+#     own when power returns.
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-prodos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-prodos}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-prodos} -d ${POSTGRES_DB:-prodos}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+    volumes:
+      - ./infra/mosquitto/mosquitto.prod.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    healthcheck:
+      # The broker image ships no curl or mosquitto_sub in a slim variant, so
+      # check the listener with a raw TCP connect from bash.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/1883 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    # No --reload: the image CMD is a plain `uvicorn app.main:app`. Reload in
+    # prod would add a watcher process that can wedge the container and it would
+    # serve half-written code if anyone ever mounted the source.
+    env_file: .env
+    environment:
+      # `environment` beats `env_file`, which is what lets one .env serve both a
+      # local run and the compose network: .env keeps DATABASE_URL=localhost for
+      # host-local use, and this line overrides it to the `db` service name.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-prodos}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-prodos}
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  pgdata:
+  mosquitto_data:
+  mosquitto_log:

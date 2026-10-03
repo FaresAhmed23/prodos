@@ -180,8 +180,11 @@ envelope, so nothing in the dashboard had to change.
 
 ```text
 prodos/
+├── README.md                    # project intro + "Pilot deployment" bring-up (F-7)
 ├── docker-compose.yml            # db (postgres:16, :5432) + mosquitto (:1883) + backend (build ./backend)
-├── infra/mosquitto/mosquitto.conf
+├── docker-compose.prod.yml       # F-7 pilot mode: single host, restart policies, volumes, required POSTGRES_PASSWORD
+├── infra/mosquitto/mosquitto.conf        # dev: listener + anonymous
+├── infra/mosquitto/mosquitto.prod.conf   # F-7 pilot: persistence (QoS 1 sessions), queue bounds, logging
 ├── backend/
 │   ├── Dockerfile
 │   ├── requirements.txt          # fastapi, uvicorn[standard], sqlalchemy, psycopg[binary], pydantic, pydantic-settings, aiomqtt, httpx
@@ -540,7 +543,7 @@ One caveat carried over from F-8 and now asserted knowingly: SQLite does not rou
 values and ordering, never the tz suffix, so this is invisible here — but do not "fix" a naive
 datetime by loosening an assertion.
 
-### F-7 · Pilot deployment mode — Priority: MEDIUM (needed by Feb)
+### F-7 · Pilot deployment mode — Priority: MEDIUM (needed by Feb) — **DONE, not yet launched**
 
 Do:
 
@@ -549,6 +552,65 @@ Do:
 - README section: "Pilot deployment" — bring-up steps and how to point sensors at the host.
 
 Accept: on a clean machine, `docker compose -f docker-compose.prod.yml --env-file .env up -d` yields a working system (verifiable with fake sensor pointed `--host` at it).
+
+`README.md` is new and deliberately short. It carries only the operator-facing pilot path and points
+at `AGENTS.md` §6 for development; duplicating the dev instructions into a second file would give
+the two something to disagree about.
+
+**Four things differ from `docker-compose.yml`, each for a stated reason.** Postgres is not
+published to the LAN — nothing outside the compose network needs it, and an open 5432 would be the
+pilot's weakest link; `docker compose exec db psql` still works. Mosquitto *is* published, because
+the ESP32 sensors have no other way in. The password is `${POSTGRES_PASSWORD:?...}`, so a forgotten
+one aborts `up` loudly rather than deploying the dev `prodos:prodos` credential — the dev file
+hardcodes that password, which is exactly the thing that must not survive into a pilot.
+`unless-stopped` everywhere, so a Pi that browns out comes back when power does.
+
+**`env_file` plus `environment` on the backend is deliberate, not redundant.** One `.env` serves
+both a host-local run and the compose network: `env_file` loads it, then `environment` overrides
+`DATABASE_URL` and `MQTT_HOST` with the service names `db` and `mosquitto`. Without that override
+the container would inherit `DATABASE_URL=...@localhost:5432` from `.env` and talk to itself.
+
+**Mosquitto persistence exists because of PRO-16, and it is not yet load-bearing.** QoS 1
+redelivery survives a broker restart only if sessions persist, so `mosquitto.prod.conf` sets
+`persistence true`, `persistence_location /mosquitto/data/`, and `autosave_interval 300` — every 5
+minutes rather than on every write, because the pilot host may be a Pi with an SD card and the
+default save-on-change wears it out. It also bounds the queue (`max_queued_messages 10000`) and
+drops queued QoS 0 messages (`queue_qos0_messages false`), since a queued beacon from a minute ago
+is not evidence of anything. Until the detection engine publishes at QoS 1 this changes nothing
+observable; it is pre-building for PRO-16 so the flip is one line on their side.
+
+The dev and pilot broker configs are separate files on purpose. `allow_anonymous true` has to stay
+for local work because the ESP32 firmware has nowhere to store a credential, but that should not be
+inherited silently by a long-running deployment — the pilot file states it as a tradeoff and says
+not to expose the host to the internet.
+
+**Verified as far as this machine allows, and no further — Docker is not installed on the dev
+host, so the `up -d` acceptance itself has NOT been executed.** What was run:
+
+- The prod broker config was loaded into a real Mosquitto 2.1.2 and started. Every directive
+  parsed; it listened, and `persistence true` + `persistence_location` produced a `mosquitto.db`.
+- A real MQTT round trip through that broker: anonymous connect, wildcard subscribe, publish,
+  receive. So the config the sensors will actually meet is proven, not assumed.
+- Both compose files parse as YAML; the five `${VAR}` interpolations are each declared in
+  `.env.example`; the invariants were asserted programmatically (db port absent, `restart`
+  present, password required, `env_file` present, no `command:` override, no source mount).
+- `--reload` is absent from the effective path: the Dockerfile CMD has none and the service
+  inherits it, so there is no reload path to take in the first place.
+
+Not verified, and needs a host with Docker before the pilot: that the images build, that
+`depends_on: condition: service_healthy` actually gates on the healthchecks (the broker one uses a
+`/dev/tcp` connect, since the slim image ships no `curl`), and that the whole stack survives a
+reboot.
+
+### Known gaps a pilot must close (F-7 did not, and could not, close these)
+
+- **The detection engine is not in the compose file.** `detection/` has no Dockerfile and is owned
+  by Zaki and Omar, so it runs as a separate process against `MQTT_HOST`. A pilot host is four
+  processes, not three. Adding it is a few lines once an image exists.
+- **QoS 1 inert end-to-end** — PRO-16, theirs to publish.
+- **No auth or TLS on the API or broker.** Not viable beyond a trusted LAN.
+- **No backup.** `pgdata` is a plain named volume. `alerts` and `explanation_logs` are the
+  irreplaceable part; a nightly `pg_dump` is the obvious next step.
 
 ### F-8 · API polish for Arsany — Priority: MEDIUM — **DONE**
 
