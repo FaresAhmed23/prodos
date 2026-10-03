@@ -778,50 +778,50 @@ Never edit a revision that has already run somewhere other than a scratch databa
 
 F-10 · v2 roadmap — the "10/10" plan (do NOT start until M0–M4 are complete)
 
-Gate: F-11 through F-17 begin only after M4 closes (Feb 2027). One exception:passive data collection (explanation_logs) and pilot design happen during thepilot itself. Nothing here touches the repo before then. Budget: all software is0 EGP (free GPU tiers, free bot APIs, public datasets); the only hardware additionis one extra ESP32 (~350 EGP), shared between F-13's calibration transmitter andthe M4 attack harness. Total project cost stays under ~2,000 EGP.
+Gate: F-11 through F-17 begin only after M4 closes (Feb 2027). One exception: passive data collection (explanation_logs) and pilot design happen during the pilot itself. Nothing here touches the repo before then. Budget: all software is 0 EGP (free GPU tiers, free bot APIs, public datasets); the only hardware addition is one extra ESP32 (~350 EGP), shared between F-13's calibration transmitter and the M4 attack harness. Total project cost stays under ~2,000 EGP.
 
-Why this roadmap exists: rules-based detection is commodity — a Pi with Kismetdoes it. The defensible contributions are (1) the collected (alert → laypersonexplanation) dataset + fine-tuned model, (2) the rules-vs-ML comparison, (3)attacker localization at commodity hardware prices, (4) a churn-tested pilot.Every lever below carries a number — if it can't be measured, it doesn't ship.
+Why this roadmap exists: rules-based detection is commodity — a Pi with Kismet does it. The defensible contributions are (1) the collected (alert → layperson explanation) dataset + fine-tuned model, (2) the rules-vs-ML comparison, (3) attacker localization at commodity hardware prices, (4) a churn-tested pilot. Every lever below carries a number — if it can't be measured, it doesn't ship.
 F-11 · ML anomaly detection layer — Priority: HIGH (v2)
 
-Why: answers "where is the machine learning" permanently. The rules become thebaseline; the comparison is the science.
+Why: answers "where is the machine learning" permanently. The rules become the baseline; the comparison is the science.
 
-Do: per-window feature extraction over stored frames (frame rates by type, RSSImean/σ per BSSID, new-MAC velocity, beacon-interval variance); Isolation Forest ora small autoencoder; train on AWID + the M4 attack-harness captures; keep therules engine running as baseline. Owner: Zaki + Omar, Mohamed Ahmed advising.
+Do: per-window feature extraction over stored frames (frame rates by type, RSSI mean/σ per BSSID, new-MAC velocity, beacon-interval variance); Isolation Forest or a small autoencoder; train on AWID + the M4 attack-harness captures; keep the rules engine running as baseline. Owner: Zaki + Omar, Mohamed Ahmed advising.
 
-Accept: a report with precision/recall/F1 for rules-only AND rules+ML on the sameheld-out attack set. Ship the ML layer only if it improves recall by ≥5 points orhalves the FP rate at equal recall. Cost: 0.
+Accept: a report with precision/recall/F1 for rules-only AND rules+ML on the same held-out attack set. Ship the ML layer only if it improves recall by ≥5 points or halves the FP rate at equal recall. Cost: 0.
 F-12 · Fine-tuning pipeline + A/B/C human evaluation — Priority: HIGH (v2)
 
-Why: nobody has a (technical wireless alert → plain-language explanation)dataset. This is the project's novel contribution and objective #3 done properly.
+Why: nobody has a (technical wireless alert → plain-language explanation) dataset. This is the project's novel contribution and objective #3 done properly.
 
-Do: export explanation_logs; LoRA fine-tune a small open model (Qwen/Llama ≤3B)on free Colab/Kaggle GPU; evaluation with ≥20 non-technical raters, three blindcounterbalanced arms (template / prompted LLM / fine-tuned), scoring comprehension("explain what happened in your own words") and actionability ("what would youdo?"). Owner: Mohamed Ahmed + Fares.
+Do: export explanation_logs; LoRA fine-tune a small open model (Qwen/Llama ≤3B) on free Colab/Kaggle GPU; evaluation with ≥20 non-technical raters, three blind counterbalanced arms (template / prompted LLM / fine-tuned), scoring comprehension ("explain what happened in your own words") and actionability ("what would you do?"). Owner: Mohamed Ahmed + Fares.
 
-Accept: anonymized dataset released; fine-tuned arm ≥ prompted arm on comprehensionor the failure documented; overall ≥90% understand-and-act criterion measured;writeup in paper-ready form. Cost: 0.
+Accept: anonymized dataset released; fine-tuned arm ≥ prompted arm on comprehension or the failure documented; overall ≥90% understand-and-act criterion measured; writeup in paper-ready form. Cost: 0.
 
-⚠️ The pilot MUST run with LLM_API_KEY set. A templates-only pilot writesprompt = NULL rows and produces no fine-tuning dataset — this lever dies withoutit. (See the PRO-21 provider decision.)
+⚠️ The pilot MUST run with LLM_API_KEY set. A templates-only pilot writes prompt = NULL rows and produces no fine-tuning dataset — this lever dies without it. (See the PRO-21 provider decision.)
 F-13 · RSSI zone localization — Priority: HIGH (v2 flagship)
 
-Why: "a copy of your WiFi is broadcasting near the front window" is an alert nocommodity tool gives at this price, and it justifies the multi-sensor hardware.
+Why: "a copy of your WiFi is broadcasting near the front window" is an alert no commodity tool gives at this price, and it justifies the multi-sensor hardware.
 
-Do: zone fingerprinting — during site setup, walk a test transmitter (the 4thESP32) through each named zone and record per-sensor RSSI signatures into areference table; classify rogue-AP RSSI signatures into zones (k-NN or logisticregression); show the zone on a simple site map in the dashboard. Gracefuldegradation: if accuracy is poor, fall back to "nearest sensor" granularity.Owner: Fares (backend) + Ammar (calibration ritual) + Zaki.
+Do: zone fingerprinting — during site setup, walk a test transmitter (the 4th ESP32) through each named zone and record per-sensor RSSI signatures into a reference table; classify rogue-AP RSSI signatures into zones (k-NN or logistic regression); show the zone on a simple site map in the dashboard. Graceful degradation: if accuracy is poor, fall back to "nearest sensor" granularity. Owner: Fares (backend) + Ammar (calibration ritual) + Zaki.
 
-Accept: ≥70% top-1 and ≥90% top-2 zone accuracy on held-out fingerprint samples;evil-twin/rogue alerts carry a zone; one end-to-end demo. Cost: ~350 EGP (theshared 4th ESP32).
+Accept: ≥70% top-1 and ≥90% top-2 zone accuracy on held-out fingerprint samples; evil-twin/rogue alerts carry a zone; one end-to-end demo. Cost: ~350 EGP (the shared 4th ESP32).
 F-14 · Telegram notifications — Priority: MEDIUM (v2, small)
 
-Do: bot token via env; owner registers their chat with /start; push on alertcreation with title + recommended action. Do NOT attempt WhatsApp Business(per-message cost + verification burden).
+Do: bot token via env; owner registers their chat with /start; push on alert creation with title + recommended action. Do NOT attempt WhatsApp Business (per-message cost + verification burden).
 
 Accept: phone notification ≤5 s after alert creation in a live test. Cost: 0.
 F-15 · Baseline learning mode — Priority: MEDIUM (v2)
 
-Why: the fix for proposal risk #2 (false positives from legitimate changeslike router reboots).
+Why: the fix for proposal risk #2 (false positives from legitimate changes like router reboots).
 
-Do: first 24–48 h per site, profile known BSSIDs, normal beacon rates, RSSIranges per BSSID; suppress alerts matching the baseline; document refresh/expiry.Owner: Zaki + Omar.
+Do: first 24–48 h per site, profile known BSSIDs, normal beacon rates, RSSI ranges per BSSID; suppress alerts matching the baseline; document refresh/expiry. Owner: Zaki + Omar.
 
-Accept: a replayed router-reboot scenario produces zero evil-twin FPs; the 48 h FPtest from objective #2 re-run with baseline on, under the 10% bound with margin.Cost: 0.
+Accept: a replayed router-reboot scenario produces zero evil-twin FPs; the 48 h FP test from objective #2 re-run with baseline on, under the 10% bound with margin. Cost: 0.
 F-16 · Mitigation guidance + router API (stretch) — Priority: LOW
 
-Do: every alert's recommended action must be concrete and executable in one step.Stretch: one router model integration (e.g. a TP-Link with an API) that changesthe WiFi channel on owner confirmation. Prodos hardware NEVER transmitsdeauth/disassoc frames — observe and advise only (proposal §10 legal line).Owner: Fares + Arsany. Accept: one working router demo OR the action texteverywhere. Cost: 0–900 EGP.
+Do: every alert's recommended action must be concrete and executable in one step. Stretch: one router model integration (e.g. a TP-Link with an API) that changes the WiFi channel on owner confirmation. Prodos hardware NEVER transmits deauth/disassoc frames — observe and advise only (proposal §10 legal line). Owner: Fares + Arsany. Accept: one working router demo OR the action text everywhere. Cost: 0–900 EGP.
 F-17 · Multi-site pilot + churn + business model — Priority: MEDIUM (v2)
 
-Do: 2–3 sites (sequential with the same kit, or +1 sensor); track alerts/day, FPcomplaints, % of alerts acted on, and the churn question — did they ask to keepit?; one-page business model in the final report (≈1,350 EGP BOM/site, one-timekit + optional monitoring framing). Owner: all.
+Do: 2–3 sites (sequential with the same kit, or +1 sensor); track alerts/day, FP complaints, % of alerts acted on, and the churn question — did they ask to keep it?; one-page business model in the final report (≈1,350 EGP BOM/site, one-time kit + optional monitoring framing). Owner: all.
 
 Accept: ≥2 sites × ≥2 weeks, churn metric reported. Cost: 0–400 EGP.
 
