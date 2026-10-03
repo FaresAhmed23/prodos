@@ -179,21 +179,22 @@ prodos/
 ├── infra/mosquitto/mosquitto.conf
 ├── backend/
 │   ├── Dockerfile
-│   ├── requirements.txt          # fastapi, uvicorn[standard], sqlalchemy, psycopg[binary], pydantic, pydantic-settings, aiomqtt
+│   ├── requirements.txt          # fastapi, uvicorn[standard], sqlalchemy, psycopg[binary], pydantic, pydantic-settings, aiomqtt, httpx
 │   ├── requirements-dev.txt      # amqtt + websockets, only for scripts/smoke_test.py
 │   ├── run.py                    # Windows-safe uvicorn entrypoint (selector event loop) — use this
 │   └── app/
 │       ├── __init__.py
 │       ├── main.py               # FastAPI app: lifespan (create_all + mqtt tasks), CORS, /health, /ws/frames, /ws/alerts
-│       ├── config.py             # Settings: database_url, mqtt_host/port, mqtt_topic_frames, mqtt_topic_events
+│       ├── config.py             # Settings: database_url, mqtt_host/port, mqtt_topic_frames, mqtt_topic_events, llm_api_base/model/key/timeout
 │       ├── schemas.py            # contracts above (WiFiFrame, FrameBatch, DetectionEvent, Alert, EventOut, AlertUpdate)
 │       ├── database.py           # engine + SessionLocal (pins the Postgres session to UTC)
-│       ├── models.py             # Frame, Event, Alert, Sensor SQLAlchemy tables
+│       ├── models.py             # Frame, Event, Alert, Sensor, ExplanationLog SQLAlchemy tables
 │       ├── mqtt.py               # mqtt_ingest_loop() + events_ingest_loop() + Broadcaster fan-out
-│       ├── alerts.py             # DetectionEvent -> stored Event -> generated Alert
+│       ├── alerts.py             # DetectionEvent -> stored Event -> generated Alert + explanation_logs row
 │       ├── ai/                   # co-owned with Mohamed Ahmed — explanation layer
 │       │   ├── explanation.py    # Explanation dataclass + ExplanationProvider protocol
-│       │   └── template_provider.py  # offline, deterministic, jargon-free (the floor)
+│       │   ├── template_provider.py  # offline, deterministic, jargon-free (the floor)
+│       │   └── llm_provider.py   # any OpenAI-compatible endpoint (base URL + model + key from env); raises, never falls back itself
 │       └── routers/              # frames.py, sensors.py, events.py, alerts.py
 ├── scripts/fake_sensor.py        # simulated ESP32; flags: --evil-twin (clone after 15s), --deauth (60 deauth/s after 10s), --sensor ID, --host
 ├── scripts/smoke_test.py         # Docker-free end-to-end check; SMOKE_DATABASE_URL / SMOKE_BROKER swap in the real deps
@@ -210,7 +211,35 @@ prodos/
 Implemented and working: monorepo, docker-compose, MQTT ingestion → Postgres, `/frames/recent`,
 `/ws/frames` live stream, `/sensors` registry, hourly frame retention, `prodos/events` subscription,
 `/events`, `/alerts`, `PATCH /alerts/{id}`, `/ws/alerts` live push, offline template explanations,
-detection skeleton, fake sensor with attack simulation modes.
+template-or-LLM provider selection, `explanation_logs` audit trail, detection skeleton, fake sensor
+with attack simulation modes.
+
+### AI explanation layer (F-5)
+
+Two providers behind one `ExplanationProvider` protocol. `alerts.build_provider()` picks the LLM
+when `LLM_API_KEY` is set and the offline template otherwise, so the key is the only switch — there
+is no way to end up calling a model nobody configured. `llm_provider.py` talks to any
+OpenAI-compatible `/chat/completions` endpoint over a raw `httpx` POST (base URL + model + key),
+which keeps it vendor-neutral without a dependency per vendor. It deliberately has **no** fallback
+logic of its own: every failure raises, and `handle_detection_event` catches, logs a warning and
+falls back to the template. The rule that makes this safe is "an unreachable model costs tone, not
+the alert".
+
+`explanation_logs` (event JSON, `provider_used`, `prompt`, `output` JSON, `created_at`) is written
+in the *same transaction* as the alert, and only on the path that actually creates one — a replayed
+`event_id` must not inflate the fine-tuning dataset. `prompt` is null for template rows, which is
+how a reviewer later separates real LLM output from offline text.
+
+Expect a full traceback in the log per alert if a key is set but the endpoint is unreachable. That
+is deliberate (`exc_info=True`) and loud on purpose: it means a configured provider is broken and
+should be fixed, and it stops once the provider works.
+
+Verified three ways, all against real processes: no key → template with `prompt` NULL; key + a stub
+chat-completions server → LLM output used, `Bearer` key sent, prompt stored; key + a closed port →
+template text delivered anyway with a warning. `explanation_logs` held 1:1 with alerts in every
+mode. Regression: `smoke_test.py` 27/27 on Mosquitto 2.1.2 + PostgreSQL 16.10 and the F-4 suite
+green. Note for F-6: the LLM path needs the stub server as a fixture, since there is no pytest
+coverage of it yet and no real key in the repo.
 
 Windows note (do not "clean this up"): `aiomqtt` drives its socket via `add_reader`/`add_writer`,
 which `ProactorEventLoop` does not implement, so MQTT ingest dies with `NotImplementedError` and
@@ -395,7 +424,7 @@ status; `PATCH /alerts/{id}` accepts only `acknowledged`/`resolved` and rejects 
 unknown id is 404. Replaying a `DetectionEvent` with a duplicate `event_id` does not create a
 second alert. Verified on PostgreSQL 16.10 and Mosquitto 2.1.2.
 
-### F-5 · AI explanation layer v1 (template + LLM behind one interface) — Priority: HIGH (M3 core, co-owned with Mohamed Ahmed)
+### F-5 · AI explanation layer v1 (template + LLM behind one interface) — Priority: HIGH (M3 core, co-owned with Mohamed Ahmed) — **DONE**
 
 **Why:** proposal objective #3 — plain-language explanations a café owner understands.
 
@@ -413,6 +442,18 @@ Do:
 - Logging for future fine-tuning (important — Mohamed Ahmed needs this): every generated explanation is appended to table `explanation_logs` (new model): `event` (JSON), `provider_used`, `prompt` (text, null for template), `output` (JSON), `created_at`. This is the v2 fine-tuning dataset.
 
 Accept: with no API key, alerts carry template explanations matching the tone above; with key set, LLM output used; with key set but server unreachable, alerts still delivered with template text and a warning logged; `explanation_logs` grows one row per alert.
+
+Met: all four cases verified with real processes and a stub chat-completions server (no key needed in
+the repo). Provider selection, `Bearer` auth header, prompt capture, the fallback-with-warning path
+and the 1:1 log-to-alert ratio all assert green. One real defect found and fixed: the deauth
+template ran to four sentences while the LLM prompt caps at three, so the same owner could tell
+which provider wrote an alert from the length alone — folded into three.
+
+⚠️ **For Mohamed Ahmed:** `SYSTEM_PROMPT` in `ai/llm_provider.py` is the thing to tune, and it is
+the only part of F-5 that needs your judgement rather than mine. The provider requires the model to
+answer with a JSON object of exactly `title` / `explanation` / `recommended_action`; change the
+wording freely, keep those three keys. `explanation_logs` starts collecting the (event → explanation)
+dataset from the moment this merges, so real traffic begins filling it before any prompt tuning.
 
 ### F-6 · Backend test suite — Priority: MEDIUM
 

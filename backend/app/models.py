@@ -60,6 +60,23 @@ class Alert(Base):
     status: Mapped[str] = mapped_column(String(16), default="new", index=True)
 
 
+class ExplanationLog(Base):
+    """One row per generated explanation. This is the v2 fine-tuning dataset.
+
+    `prompt` is null for template output, which is how a reviewer tells a real
+    LLM explanation from an offline one after the fact.
+    """
+
+    __tablename__ = "explanation_logs"
+
+    id: Mapped[int] = mapped_column(FRAME_PK, primary_key=True, autoincrement=True)
+    event: Mapped[dict[str, Any]] = mapped_column(JSON)
+    provider_used: Mapped[str] = mapped_column(String(32), index=True)
+    prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    output: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
 class Sensor(Base):
     __tablename__ = "sensors"
 

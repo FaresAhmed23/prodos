@@ -5,3 +5,4 @@ psycopg[binary]
 pydantic
 pydantic-settings
 aiomqtt
+httpx                    # F-5: chat-completions POST for the LLM explanation provider

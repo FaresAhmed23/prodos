@@ -32,17 +32,17 @@ def _band(severity: int) -> str:
 
 
 def _deauth(event: DetectionEvent) -> Explanation:
+    # Kept to three sentences to match the ceiling the LLM prompt enforces, so an
+    # owner cannot tell from the wording which provider produced the alert.
     count = event.details.get("count")
-    lead = (
-        f"A nearby device sent {count} of these messages in a short burst."
-        if isinstance(count, int) else "A nearby device sent these messages repeatedly."
-    )
+    lead = f", {count} times in a short burst" if isinstance(count, int) else ""
     return Explanation(
         title="Someone is trying to knock customers off your WiFi",
         explanation=(
-            "A device near your premises is repeatedly telling your WiFi to disconnect "
-            "customers. This is often done to force people to reconnect to a fake copy of "
-            f"your network. {lead} {_band(event.severity)}"
+            "A device near your premises is repeatedly telling your WiFi to "
+            f"disconnect customers{lead}. This is often done to force people to "
+            "reconnect to a fake copy of your network. "
+            f"{_band(event.severity)}"
         ),
         recommended_action=(
             "Check the alerts list. If customers keep saying they get disconnected, "
