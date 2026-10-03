@@ -27,13 +27,13 @@ Strategy: thin vertical slice first (sensor → backend → dashboard), then ite
 
 ## 2. Team & Code Ownership (CRITICAL — do not violate)
 
-| Member | Owns | Repo directories |
-| --- | --- | --- |
-| Fares Ahmad (you work for him) | Backend, API, data contracts, AI layer integration | `backend/`, `scripts/`, `infra/` |
-| Mohamed Ahmed Abdelmoneim (Team Leader) | AI quality, prompts, evaluation, fine-tuning dataset reviews | `backend/app/ai/` |
-| Arsany Medhat | Frontend | `frontend/` — DO NOT MODIFY |
-| Omar Ahmed Fathy + Mohamed Zaki Ibrahim | Detection engine | `detection/` — DO NOT MODIFY (you may create the initial skeleton stub, see task F-3) |
-| Ammar Tarek | ESP32 firmware | `firmware/` — DO NOT MODIFY |
+| Member                                  | Owns                                                         | Repo directories                                                                      |
+| --------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Fares Ahmad (you work for him)          | Backend, API, data contracts, AI layer integration           | `backend/`, `scripts/`, `infra/`                                                      |
+| Mohamed Ahmed Abdelmoneim (Team Leader) | AI quality, prompts, evaluation, fine-tuning dataset reviews | `backend/app/ai/`                                                                     |
+| Arsany Medhat                           | Frontend                                                     | `frontend/` — DO NOT MODIFY                                                           |
+| Omar Ahmed Fathy + Mohamed Zaki Ibrahim | Detection engine                                             | `detection/` — DO NOT MODIFY (you may create the initial skeleton stub, see task F-3) |
+| Ammar Tarek                             | ESP32 firmware                                               | `firmware/` — DO NOT MODIFY                                                           |
 
 Agent rule: unless a task explicitly says otherwise, only create/modify files under `backend/`, `scripts/`, `infra/`, and root-level config. `detection/`, `firmware/`, `frontend/` belong to other humans.
 
@@ -72,15 +72,15 @@ Key design decisions (already made — do not revisit):
 
 ## 4. Tech Stack & Conventions
 
-| Layer | Technology |
-| --- | --- |
-| Backend | Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2.0 (sync ORM + asyncio.to_thread for writes), aiomqtt |
-| Database | PostgreSQL 16 |
-| Messaging | Mosquitto 2.x (MQTT) |
-| Frontend | React + Vite + TypeScript (Arsany's domain) |
-| Firmware | ESP32, Arduino/C++ (Ammar's domain) |
+| Layer           | Technology                                                                                                                                                                                     |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backend         | Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2.0 (sync ORM + asyncio.to_thread for writes), aiomqtt                                                                                           |
+| Database        | PostgreSQL 16                                                                                                                                                                                  |
+| Messaging       | Mosquitto 2.x (MQTT)                                                                                                                                                                           |
+| Frontend        | React + Vite + TypeScript (Arsany's domain)                                                                                                                                                    |
+| Firmware        | ESP32, Arduino/C++ (Ammar's domain)                                                                                                                                                            |
 | Dev environment | Windows 11 host, PowerShell — use PowerShell-compatible commands; venv at `backend/.venv`; Docker Desktop runs db + mosquitto only (hybrid mode); backend runs locally with `uvicorn --reload` |
-| Testing | pytest |
+| Testing         | pytest                                                                                                                                                                                         |
 
 Conventions:
 
@@ -98,10 +98,35 @@ Canonical source: `backend/app/schemas.py`. Duplicate here for reference.
 
 ### MQTT topics
 
-| Topic | Direction | Payload |
-| --- | --- | --- |
-| `prodos/sensors/{sensor_id}/frames` | sensor → broker | FrameBatch JSON |
-| `prodos/events` | detection engine → broker | DetectionEvent JSON |
+| Topic                               | Direction                 | Payload             |
+| ----------------------------------- | ------------------------- | ------------------- |
+| `prodos/sensors/{sensor_id}/frames` | sensor → broker           | FrameBatch JSON     |
+| `prodos/events`                     | detection engine → broker | DetectionEvent JSON |
+
+#### QoS per topic
+
+| Topic                               | Publish QoS | Subscribe QoS | Why |
+| ----------------------------------- | ----------- | ------------- | --- |
+| `prodos/sensors/{sensor_id}/frames` | 0           | 0             | High-rate best effort — ~200 frames/sec/sensor. QoS 1 would make the broker queue against a slow consumer, and a dropped batch is tolerable: gaps show up as `batch_seq` jumps. |
+| `prodos/events`                     | 1           | 1             | At-least-once. A lost `DetectionEvent` is a silently lost security alert, which is not tolerable. Duplicates are already handled by the `event_id` dedup in `alerts.py` (F-4), so redelivery is free. |
+
+Three things about MQTT QoS that decide whether the table above is even achievable:
+
+- **Delivery QoS is `min(publish QoS, granted subscribe QoS)`.** A SUBSCRIBE can only *lower*
+  delivery, never raise it. So the backend subscribing to `prodos/events` at QoS 1 does not by
+  itself guarantee QoS 1 delivery.
+- **Events still arrive at QoS 0 today (PRO-16).** `detection/main.py` publishes at the aiomqtt
+  default of QoS 0. The backend's half is done and the table above states the target, but the
+  detection half is open: until Omar/Zaki publish at QoS 1, every `DetectionEvent` is still
+  best-effort. See §6 for what was verified on each side separately.
+- **The frames side is deliberately asymmetric in intent, not in accident.** QoS 0 on a
+  200 msg/sec topic is a design decision about backpressure, not an oversight — QoS 1 there would
+  trade a bounded queue for unbounded disk growth on a Raspberry Pi.
+
+**This is transport-level only. It is not part of `schemas.py`**, so it does **not** require a
+`detection/schemas.py` re-sync — QoS is a property of the publish and subscribe calls, not of the
+payload. Nothing here is a CONTRACT CHANGE. The QoS 1 values become real behaviour only when the
+detection engine publishes at QoS 1.
 
 ### FrameBatch / WiFiFrame (sensor → backend)
 
@@ -243,7 +268,7 @@ falls back to the template. The rule that makes this safe is "an unreachable mod
 the alert".
 
 `explanation_logs` (event JSON, `provider_used`, `prompt`, `output` JSON, `created_at`) is written
-in the *same transaction* as the alert, and only on the path that actually creates one — a replayed
+in the _same transaction_ as the alert, and only on the path that actually creates one — a replayed
 `event_id` must not inflate the fine-tuning dataset. `prompt` is null for template rows, which is
 how a reviewer later separates real LLM output from offline text.
 
@@ -345,13 +370,13 @@ afterwards to confirm the defaults are untouched.
 ### Two things the real brokers disagreed about
 
 **Timezone.** `database.py` passes `connect_args={"options": "-c timezone=UTC"}` for Postgres URLs.
-Postgres renders `TIMESTAMPTZ` in the *session's* TimeZone, so on this Cairo host the API returned
+Postgres renders `TIMESTAMPTZ` in the _session's_ TimeZone, so on this Cairo host the API returned
 `2026-10-02T17:25:14.123669+03:00` — the correct instant, but a different string than a UTC host
 would produce, and a violation of the timezone-aware-UTC convention. SQLite never showed it,
 because it has no `timestamptz` and was returning naive values all along.
 
 Note this is set as a libpq connect option on purpose. An
-`event.listens_for(Engine, "connect")` hook that runs `SET TIME ZONE` *looks* correct — it passes a
+`event.listens_for(Engine, "connect")` hook that runs `SET TIME ZONE` _looks_ correct — it passes a
 `SHOW timezone` check taken inside the hook — and is then silently undone, because psycopg opens an
 implicit transaction for the statement and the pool's rollback-on-return reverts it.
 
@@ -384,17 +409,16 @@ consumer, not a regression — but it looks exactly like one. Stop stray backend
 Stop-Process -Name python -Force
 ```
 
-
 ## 7. Milestones
 
-| ID | Milestone | Target | Status |
-| --- | --- | --- | --- |
-| M0 | Vertical slice: 1 sensor → MQTT → backend → live dashboard | Oct 8, 2026, 20:00 | In progress (backend done, frontend pending Arsany) |
-| M1 | 3 sensors, full storage, deauth-rate rule + duplicate-SSID/BSSID rule | Nov 15 | Detection team |
-| M2 | Severity scoring, events → alerts pipeline, WebSocket push (<5s end-to-end) | Dec 15 | Fares-led |
-| M3 | AI explanation layer (templates → LLM), alert history UI, usability pass | Jan 15 | Fares + Mohamed Ahmed |
-| M4 | Attack test harness, AWID baseline validation, pilot prep | Feb 15 | Zaki + Omar |
-| Pilot | 2-week real deployment at one small business | Feb–Mar | All |
+| ID    | Milestone                                                                   | Target             | Status                                              |
+| ----- | --------------------------------------------------------------------------- | ------------------ | --------------------------------------------------- |
+| M0    | Vertical slice: 1 sensor → MQTT → backend → live dashboard                  | Oct 8, 2026, 20:00 | In progress (backend done, frontend pending Arsany) |
+| M1    | 3 sensors, full storage, deauth-rate rule + duplicate-SSID/BSSID rule       | Nov 15             | Detection team                                      |
+| M2 | Severity scoring, events → alerts pipeline, WebSocket push (<5s end-to-end) | Dec 15 | Backend half **done** (F-4): pipeline, `/ws/alerts` push and REST are complete and measured at 0.02–0.25s from `created_at` to delivery. Severity *scoring* is computed by the detection engine against the §5 `severity` 1–10 contract; documenting that mapping (frame rate, RSSI, pattern confidence per proposal §6.1) is M1 detection work, not backend work. |
+| M3    | AI explanation layer (templates → LLM), alert history UI, usability pass    | Jan 15             | Fares + Mohamed Ahmed                               |
+| M4    | Attack test harness, AWID baseline validation, pilot prep                   | Feb 15             | Zaki + Omar                                         |
+| Pilot | 2-week real deployment at one small business                                | Feb–Mar            | All                                                 |
 
 ## 8. Open Decisions (blocking others — chase these)
 
@@ -516,14 +540,14 @@ confirms mechanically.
 
 **Two deliberate choices worth not "fixing" later.**
 
-*The real routers, not `app.main`.* `conftest.py` mounts the four actual routers on a bare FastAPI
+_The real routers, not `app.main`._ `conftest.py` mounts the four actual routers on a bare FastAPI
 app and overrides `get_db`. Importing the real `app.main` would mean running its lifespan, which
 opens an MQTT connection and spawns both ingest tasks — precisely what the acceptance criterion says
 must not happen. Every route exercised is the shipped one; only the lifespan is skipped. MQTT is
 excluded by never starting it rather than by monkeypatching a symbol, which is the stronger form of
 "monkeypatch MQTT": there is no mock to be misconfigured.
 
-*The LLM stub is a real loopback server.* F-5 asked for the stub as a fixture, and mocking
+_The LLM stub is a real loopback server._ F-5 asked for the stub as a fixture, and mocking
 `httpx.AsyncClient.post` would have satisfied that sentence while verifying almost nothing — the URL
 construction, the `Bearer` header and the response parser would all be bypassed. `stub_llm` runs
 `HTTPServer` on `127.0.0.1` port 0 (OS-assigned, so no fixed port to collide on) and records the
@@ -537,7 +561,7 @@ Regression: `smoke_test.py` 25/25 on SQLite + in-process amqtt, twice.
 Three defects the suite found while being written, all in the tests rather than the product, which
 is the useful outcome: a miscounted hex digit in an expected MAC, a wrong assumption that
 `event_type="meteor"` is a legal `EventType` — it is not, and the template's unknown-type fallback
-is reached via `anomaly`, a *valid* `EventType` with no dedicated builder — and a fallback
+is reached via `anomaly`, a _valid_ `EventType` with no dedicated builder — and a fallback
 assertion that had been written as a tautology (`assert x and "system" not in x or x` is always
 true) and would have passed no matter what the log row contained.
 
@@ -562,7 +586,7 @@ the two something to disagree about.
 
 **Four things differ from `docker-compose.yml`, each for a stated reason.** Postgres is not
 published to the LAN — nothing outside the compose network needs it, and an open 5432 would be the
-pilot's weakest link; `docker compose exec db psql` still works. Mosquitto *is* published, because
+pilot's weakest link; `docker compose exec db psql` still works. Mosquitto _is_ published, because
 the ESP32 sensors have no other way in. The password is `${POSTGRES_PASSWORD:?...}`, so a forgotten
 one aborts `up` loudly rather than deploying the dev `prodos:prodos` credential — the dev file
 hardcodes that password, which is exactly the thing that must not survive into a pilot.
@@ -626,7 +650,7 @@ Met: cursor paging on both feeds, `/alerts/stats`, and `docs/API.md`.
 **Cursor, not offset, and the bug that decided it.** `/alerts` grows while you read it, so offset
 paging shifts the window under a polling client and silently repeats and skips rows — a new alert
 landing at the top mid-scroll pushes everything down by one. Keyset paging anchors on a row the
-client already has, so inserts cannot disturb it. Verified by inserting a brand-new alert *between*
+client already has, so inserts cannot disturb it. Verified by inserting a brand-new alert _between_
 pages and asserting zero overlap. The cursor is just the `alert_id`/`event_id` of the last row you
 already hold, so there is nothing to parse; ordering is on `(timestamp, id)` because timestamp alone
 leaves ties unordered and paging can then repeat or skip.
@@ -663,23 +687,23 @@ Replace `create_all` with Alembic; one initial migration matching current models
 `Base.metadata.create_all` is gone. `app.main.run_migrations()` runs `alembic upgrade head` in the
 lifespan, before the ingest tasks start.
 
-**Why `create_all` had to go.** It could only ever *create what was missing*. Adding a column to a
+**Why `create_all` had to go.** It could only ever _create what was missing_. Adding a column to a
 model, widening a type, dropping an index — all silently did nothing to an existing database. The
 code would then read a column that was never created, and the failure surfaced as a 500 in
 production against a database that looked fine locally. Nothing recorded what the schema was
 supposed to be, and nothing could reverse a change.
 
-**One migration, five tables, verified identical to what `create_all` produced** — on *both*
+**One migration, five tables, verified identical to what `create_all` produced** — on _both_
 backends, compared structurally rather than by eye:
 
-| Check | Result |
-| --- | --- |
-| `alembic check` on SQLite and on PostgreSQL 16.10 | `No new upgrade operations detected` |
-| Tables, columns, types, nullability, PKs, indexes vs `create_all` | identical, 5/5 |
-| Every timestamp column on Postgres | `timestamp with time zone` (F-4's UTC guarantee intact) |
-| `downgrade base` → `upgrade head` | clean round trip, 0 tables left behind |
-| `upgrade head` run twice | no-op, no error |
-| `frames.id` / `explanation_logs.id` | `BigInteger().with_variant(Integer, 'sqlite')` survived autogenerate |
+| Check                                                             | Result                                                               |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `alembic check` on SQLite and on PostgreSQL 16.10                 | `No new upgrade operations detected`                                 |
+| Tables, columns, types, nullability, PKs, indexes vs `create_all` | identical, 5/5                                                       |
+| Every timestamp column on Postgres                                | `timestamp with time zone` (F-4's UTC guarantee intact)              |
+| `downgrade base` → `upgrade head`                                 | clean round trip, 0 tables left behind                               |
+| `upgrade head` run twice                                          | no-op, no error                                                      |
+| `frames.id` / `explanation_logs.id`                               | `BigInteger().with_variant(Integer, 'sqlite')` survived autogenerate |
 
 That last row is the one that would have bitten quietly. `frames.id` is a `BigInteger` with an
 `Integer` fallback because SQLite only autoincrements plain `INTEGER PRIMARY KEY`s (see the comment
@@ -690,11 +714,11 @@ insert outside Postgres would have failed while the pilot database was perfectly
 `compare_metadata` returns empty, and that assertion was checked against three deliberately
 sabotaged models — each in its own process, since mutating `__table__` twice corrupts the class:
 
-| Sabotage | Detected as |
-| --- | --- |
-| new column on `Frame`, no revision written | `add_column` |
-| `Alert.title` `String(200)` → `String(500)`, no revision | `modify_type` |
-| indexes cleared from `Alert`, no revision | `remove_index` |
+| Sabotage                                                 | Detected as    |
+| -------------------------------------------------------- | -------------- |
+| new column on `Frame`, no revision written               | `add_column`   |
+| `Alert.title` `String(200)` → `String(500)`, no revision | `modify_type`  |
+| indexes cleared from `Alert`, no revision                | `remove_index` |
 
 The middle one is what `compare_type=True` in `env.py` buys. Without it a type change is invisible
 to autogenerate, which is the exact class of drift that produced the original problem.
@@ -713,7 +737,7 @@ For the same reason `env.py` re-applies the Postgres `-c timezone=UTC` connect o
 +03:00, which is the F-4 lesson.
 
 **`render_as_batch` is required, not decorative.** SQLite cannot `ALTER` most things. Without it
-the *second* migration would work in production and fail for everyone developing on SQLite, which
+the _second_ migration would work in production and fail for everyone developing on SQLite, which
 is this project's default dev database.
 
 ### Migrating at startup, and when to stop doing it
@@ -752,9 +776,54 @@ exactly, which is the point — existing pilot databases stamp `bfd1100cc262` as
 
 Never edit a revision that has already run somewhere other than a scratch database.
 
-### F-10 · v2 backlog (do NOT start until M0–M4 done)
+F-10 · v2 roadmap — the "10/10" plan (do NOT start until M0–M4 are complete)
 
-Fine-tuning pipeline on collected `explanation_logs`; ML anomaly detection over stored frames; Telegram/email notifications; historical analytics endpoints; OTA sensor updates.
+Gate: F-11 through F-17 begin only after M4 closes (Feb 2027). One exception:passive data collection (explanation_logs) and pilot design happen during thepilot itself. Nothing here touches the repo before then. Budget: all software is0 EGP (free GPU tiers, free bot APIs, public datasets); the only hardware additionis one extra ESP32 (~350 EGP), shared between F-13's calibration transmitter andthe M4 attack harness. Total project cost stays under ~2,000 EGP.
+
+Why this roadmap exists: rules-based detection is commodity — a Pi with Kismetdoes it. The defensible contributions are (1) the collected (alert → laypersonexplanation) dataset + fine-tuned model, (2) the rules-vs-ML comparison, (3)attacker localization at commodity hardware prices, (4) a churn-tested pilot.Every lever below carries a number — if it can't be measured, it doesn't ship.
+F-11 · ML anomaly detection layer — Priority: HIGH (v2)
+
+Why: answers "where is the machine learning" permanently. The rules become thebaseline; the comparison is the science.
+
+Do: per-window feature extraction over stored frames (frame rates by type, RSSImean/σ per BSSID, new-MAC velocity, beacon-interval variance); Isolation Forest ora small autoencoder; train on AWID + the M4 attack-harness captures; keep therules engine running as baseline. Owner: Zaki + Omar, Mohamed Ahmed advising.
+
+Accept: a report with precision/recall/F1 for rules-only AND rules+ML on the sameheld-out attack set. Ship the ML layer only if it improves recall by ≥5 points orhalves the FP rate at equal recall. Cost: 0.
+F-12 · Fine-tuning pipeline + A/B/C human evaluation — Priority: HIGH (v2)
+
+Why: nobody has a (technical wireless alert → plain-language explanation)dataset. This is the project's novel contribution and objective #3 done properly.
+
+Do: export explanation_logs; LoRA fine-tune a small open model (Qwen/Llama ≤3B)on free Colab/Kaggle GPU; evaluation with ≥20 non-technical raters, three blindcounterbalanced arms (template / prompted LLM / fine-tuned), scoring comprehension("explain what happened in your own words") and actionability ("what would youdo?"). Owner: Mohamed Ahmed + Fares.
+
+Accept: anonymized dataset released; fine-tuned arm ≥ prompted arm on comprehensionor the failure documented; overall ≥90% understand-and-act criterion measured;writeup in paper-ready form. Cost: 0.
+
+⚠️ The pilot MUST run with LLM_API_KEY set. A templates-only pilot writesprompt = NULL rows and produces no fine-tuning dataset — this lever dies withoutit. (See the PRO-21 provider decision.)
+F-13 · RSSI zone localization — Priority: HIGH (v2 flagship)
+
+Why: "a copy of your WiFi is broadcasting near the front window" is an alert nocommodity tool gives at this price, and it justifies the multi-sensor hardware.
+
+Do: zone fingerprinting — during site setup, walk a test transmitter (the 4thESP32) through each named zone and record per-sensor RSSI signatures into areference table; classify rogue-AP RSSI signatures into zones (k-NN or logisticregression); show the zone on a simple site map in the dashboard. Gracefuldegradation: if accuracy is poor, fall back to "nearest sensor" granularity.Owner: Fares (backend) + Ammar (calibration ritual) + Zaki.
+
+Accept: ≥70% top-1 and ≥90% top-2 zone accuracy on held-out fingerprint samples;evil-twin/rogue alerts carry a zone; one end-to-end demo. Cost: ~350 EGP (theshared 4th ESP32).
+F-14 · Telegram notifications — Priority: MEDIUM (v2, small)
+
+Do: bot token via env; owner registers their chat with /start; push on alertcreation with title + recommended action. Do NOT attempt WhatsApp Business(per-message cost + verification burden).
+
+Accept: phone notification ≤5 s after alert creation in a live test. Cost: 0.
+F-15 · Baseline learning mode — Priority: MEDIUM (v2)
+
+Why: the fix for proposal risk #2 (false positives from legitimate changeslike router reboots).
+
+Do: first 24–48 h per site, profile known BSSIDs, normal beacon rates, RSSIranges per BSSID; suppress alerts matching the baseline; document refresh/expiry.Owner: Zaki + Omar.
+
+Accept: a replayed router-reboot scenario produces zero evil-twin FPs; the 48 h FPtest from objective #2 re-run with baseline on, under the 10% bound with margin.Cost: 0.
+F-16 · Mitigation guidance + router API (stretch) — Priority: LOW
+
+Do: every alert's recommended action must be concrete and executable in one step.Stretch: one router model integration (e.g. a TP-Link with an API) that changesthe WiFi channel on owner confirmation. Prodos hardware NEVER transmitsdeauth/disassoc frames — observe and advise only (proposal §10 legal line).Owner: Fares + Arsany. Accept: one working router demo OR the action texteverywhere. Cost: 0–900 EGP.
+F-17 · Multi-site pilot + churn + business model — Priority: MEDIUM (v2)
+
+Do: 2–3 sites (sequential with the same kit, or +1 sensor); track alerts/day, FPcomplaints, % of alerts acted on, and the churn question — did they ask to keepit?; one-page business model in the final report (≈1,350 EGP BOM/site, one-timekit + optional monitoring framing). Owner: all.
+
+Accept: ≥2 sites × ≥2 weeks, churn metric reported. Cost: 0–400 EGP.
 
 ## 10. Hard constraints for the agent
 
