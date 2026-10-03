@@ -162,8 +162,13 @@ class Alert(BaseModel):
 - `GET /health` → `{"status": "ok"}`
 - `GET /frames/recent?seconds=300&limit=50&frame_type=<opt>` → list of stored frames (newest first)
 - `WS /ws/frames` → live JSON frames as they're ingested
-- `GET /events?limit=50&event_type=<opt>` · `GET /alerts?status=new&limit=50` · `PATCH /alerts/{alert_id}` with `{"status": "acknowledged" | "resolved"}` · `WS /ws/alerts` → live alerts
-- Auto-generated OpenAPI docs at `/docs`
+- `GET /events?limit=50&event_type=<opt>&cursor=<event_id>` · `GET /alerts?status=new&limit=50&cursor=<alert_id>` · `GET /alerts/stats?window_hours=24` · `PATCH /alerts/{alert_id}` with `{"status": "acknowledged" | "resolved"}` · `WS /ws/alerts` → live alerts
+- Auto-generated OpenAPI docs at `/docs`; `docs/API.md` is the frontend-facing guide (pagination, timestamp format, WebSocket lifecycle)
+
+F-8 added `cursor` and `window_hours` as **optional** query params, one new read-only endpoint
+(`/alerts/stats`), and two response headers. All additive: every pre-existing call returns exactly
+what it did before, and `GET /alerts` / `GET /events` still return a bare JSON array rather than an
+envelope, so nothing in the dashboard had to change.
 
 ## 6. Current Repository State (as of this document)
 
@@ -195,7 +200,9 @@ prodos/
 │       │   ├── explanation.py    # Explanation dataclass + ExplanationProvider protocol
 │       │   ├── template_provider.py  # offline, deterministic, jargon-free (the floor)
 │       │   └── llm_provider.py   # any OpenAI-compatible endpoint (base URL + model + key from env); raises, never falls back itself
+│       ├── pagination.py        # keyset cursor paging shared by /alerts and /events
 │       └── routers/              # frames.py, sensors.py, events.py, alerts.py
+├── docs/API.md                  # frontend-facing guide for Arsany (F-8)
 ├── scripts/fake_sensor.py        # simulated ESP32; flags: --evil-twin (clone after 15s), --deauth (60 deauth/s after 10s), --sensor ID, --host
 ├── scripts/smoke_test.py         # Docker-free end-to-end check; SMOKE_DATABASE_URL / SMOKE_BROKER swap in the real deps
 ├── .env.example                  # every Settings variable, documented
@@ -210,9 +217,10 @@ prodos/
 
 Implemented and working: monorepo, docker-compose, MQTT ingestion → Postgres, `/frames/recent`,
 `/ws/frames` live stream, `/sensors` registry, hourly frame retention, `prodos/events` subscription,
-`/events`, `/alerts`, `PATCH /alerts/{id}`, `/ws/alerts` live push, offline template explanations,
-template-or-LLM provider selection, `explanation_logs` audit trail, detection skeleton, fake sensor
-with attack simulation modes.
+`/events`, `/alerts`, `/alerts/stats`, `PATCH /alerts/{id}`, `/ws/alerts` live push, cursor
+pagination on both feeds, offline template explanations, template-or-LLM provider selection,
+`explanation_logs` audit trail, detection skeleton, fake sensor with attack simulation modes,
+`docs/API.md` frontend guide.
 
 ### AI explanation layer (F-5)
 
@@ -492,11 +500,46 @@ Do:
 
 Accept: on a clean machine, `docker compose -f docker-compose.prod.yml --env-file .env up -d` yields a working system (verifiable with fake sensor pointed `--host` at it).
 
-### F-8 · API polish for Arsany — Priority: MEDIUM
+### F-8 · API polish for Arsany — Priority: MEDIUM — **DONE**
 
 Do: pagination on `/alerts` and `/events` (cursor or offset), `GET /alerts/stats` (counts by status + severity, last 24h) for dashboard summary cards, and a short `docs/API.md` for the frontend dev. Keep `/docs` OpenAPI as source of truth.
 
 Accept: `/alerts/stats` returns correct counts against seeded data.
+
+Met: cursor paging on both feeds, `/alerts/stats`, and `docs/API.md`.
+
+**Cursor, not offset, and the bug that decided it.** `/alerts` grows while you read it, so offset
+paging shifts the window under a polling client and silently repeats and skips rows — a new alert
+landing at the top mid-scroll pushes everything down by one. Keyset paging anchors on a row the
+client already has, so inserts cannot disturb it. Verified by inserting a brand-new alert *between*
+pages and asserting zero overlap. The cursor is just the `alert_id`/`event_id` of the last row you
+already hold, so there is nothing to parse; ordering is on `(timestamp, id)` because timestamp alone
+leaves ties unordered and paging can then repeat or skip.
+
+**Deliberately non-breaking.** `GET /alerts` and `GET /events` still return a **bare JSON array**; the
+cursor comes back in `X-Next-Cursor` / `X-Has-More` headers rather than wrapping the response in an
+envelope. Arsany is building against the array shape and the checkpoint is days away, so he should
+not have to change working code. `cursor` and `window_hours` are optional, so every pre-existing
+call returns exactly what it did before.
+
+`AlertStats` is defined in `routers/alerts.py`, **not** in `schemas.py`: it is a REST-only
+convenience, not the team-wide contract in §5, and putting it in `schemas.py` would have forced
+another `detection/schemas.py` re-sync for no benefit. Its severity bands (`low` 1–3, `medium` 4–7,
+`high` 8–10) reuse the same thresholds as `ai/template_provider.py`, so a card labelled "high" and an
+alert that reads urgent are one judgement rather than two. `by_severity` always returns all three
+keys so a card can render a zero without special-casing.
+
+Verified against seeded data with known counts, on **both** backends: status counts, severity counts
+including the 3/4 and 7/8 band boundaries, the 24h window excluding older alerts, 1h-vs-24h, full
+feed coverage with no duplicates, cursor-plus-filter, unknown cursor → 400, and that the array shape
+is unchanged. Regression: `smoke_test.py` 27/27 twice and the F-4 suite green on Mosquitto 2.1.2 +
+PostgreSQL 16.10.
+
+One check passes on PostgreSQL and fails on SQLite, and it is **not** an F-8 defect: SQLite's
+`DATETIME` does not round-trip tzinfo, so datetimes come back naive. `/alerts` behaves identically —
+the naive value is pre-existing and platform-wide, which is why the F-4 fix pinned the Postgres
+session rather than the model. Production and the pilot both run PostgreSQL, where every datetime is
+`Z`-suffixed. Noted in `docs/API.md` so Arsany is not surprised by a SQLite dev machine.
 
 ### F-9 · Alembic migrations — Priority: LOW (after M3)
 
