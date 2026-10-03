@@ -6,3 +6,4 @@ pydantic
 pydantic-settings
 aiomqtt
 httpx                    # F-5: chat-completions POST for the LLM explanation provider
+alembic                  # F-9: schema migrations, run at startup (app.main.run_migrations)

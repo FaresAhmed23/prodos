@@ -90,7 +90,7 @@ Conventions:
 - Env config via pydantic-settings (`backend/app/config.py`), overridable by env vars
 - CORS allows `http://localhost:5173` and `http://localhost:3000`
 - No secrets in code; LLM API keys come from env var `LLM_API_KEY`
-- Tables created via `Base.metadata.create_all` during M0 (Alembic migrations are a later task)
+- Tables created via Alembic. `Base.metadata.create_all` is **not** used outside tests (F-9): the lifespan runs `alembic upgrade head`, and `alembic check` must report no drift from the models.
 
 ## 5. Data Contracts (BINDING — these are the team-wide signed-off schemas)
 
@@ -187,15 +187,18 @@ prodos/
 ├── infra/mosquitto/mosquitto.prod.conf   # F-7 pilot: persistence (QoS 1 sessions), queue bounds, logging
 ├── backend/
 │   ├── Dockerfile
-│   ├── requirements.txt          # fastapi, uvicorn[standard], sqlalchemy, psycopg[binary], pydantic, pydantic-settings, aiomqtt, httpx
+│   ├── requirements.txt          # fastapi, uvicorn[standard], sqlalchemy, psycopg[binary], pydantic, pydantic-settings, aiomqtt, httpx, alembic
 │   ├── requirements-dev.txt      # amqtt + websockets (scripts/smoke_test.py) + pytest (backend/tests/)
 │   ├── pytest.ini                # testpaths=tests, pythonpath=. — the pytest entrypoint is `python -m pytest` from backend/
+│   ├── alembic.ini               # F-9. NO sqlalchemy.url on purpose: env.py takes the URL from app.config.settings
+│   ├── migrations/               # F-9. env.py (UTC pin + compare_type + render_as_batch) + versions/*.py
 │   ├── tests/                    # F-6 suite: conftest (in-memory SQLite, bare-app client, loopback LLM stub)
 │   │                             #   + test_schemas / test_frames / test_alerts / test_explanation. 99 checks, no broker.
+│   │                             # F-9 adds test_migrations.py (11 checks): the migration must match the models.
 │   ├── run.py                    # Windows-safe uvicorn entrypoint (selector event loop) — use this
 │   └── app/
 │       ├── __init__.py
-│       ├── main.py               # FastAPI app: lifespan (create_all + mqtt tasks), CORS, /health, /ws/frames, /ws/alerts
+│       ├── main.py               # FastAPI app: lifespan (alembic upgrade head + mqtt tasks), CORS, /health, /ws/frames, /ws/alerts
 │       ├── config.py             # Settings: database_url, mqtt_host/port, mqtt_topic_frames, mqtt_topic_events, llm_api_base/model/key/timeout
 │       ├── schemas.py            # contracts above (WiFiFrame, FrameBatch, DetectionEvent, Alert, EventOut, AlertUpdate)
 │       ├── database.py           # engine + SessionLocal (pins the Postgres session to UTC)
@@ -653,9 +656,101 @@ the naive value is pre-existing and platform-wide, which is why the F-4 fix pinn
 session rather than the model. Production and the pilot both run PostgreSQL, where every datetime is
 `Z`-suffixed. Noted in `docs/API.md` so Arsany is not surprised by a SQLite dev machine.
 
-### F-9 · Alembic migrations — Priority: LOW (after M3)
+### F-9 · Alembic migrations — Priority: LOW (after M3) — **DONE**
 
 Replace `create_all` with Alembic; one initial migration matching current models.
+
+`Base.metadata.create_all` is gone. `app.main.run_migrations()` runs `alembic upgrade head` in the
+lifespan, before the ingest tasks start.
+
+**Why `create_all` had to go.** It could only ever *create what was missing*. Adding a column to a
+model, widening a type, dropping an index — all silently did nothing to an existing database. The
+code would then read a column that was never created, and the failure surfaced as a 500 in
+production against a database that looked fine locally. Nothing recorded what the schema was
+supposed to be, and nothing could reverse a change.
+
+**One migration, five tables, verified identical to what `create_all` produced** — on *both*
+backends, compared structurally rather than by eye:
+
+| Check | Result |
+| --- | --- |
+| `alembic check` on SQLite and on PostgreSQL 16.10 | `No new upgrade operations detected` |
+| Tables, columns, types, nullability, PKs, indexes vs `create_all` | identical, 5/5 |
+| Every timestamp column on Postgres | `timestamp with time zone` (F-4's UTC guarantee intact) |
+| `downgrade base` → `upgrade head` | clean round trip, 0 tables left behind |
+| `upgrade head` run twice | no-op, no error |
+| `frames.id` / `explanation_logs.id` | `BigInteger().with_variant(Integer, 'sqlite')` survived autogenerate |
+
+That last row is the one that would have bitten quietly. `frames.id` is a `BigInteger` with an
+`Integer` fallback because SQLite only autoincrements plain `INTEGER PRIMARY KEY`s (see the comment
+in `models.py`). Autogenerate preserved the variant; had it been flattened to `BIGINT`, every frame
+insert outside Postgres would have failed while the pilot database was perfectly happy.
+
+**The drift guard was proved to fire, not assumed.** `tests/test_migrations.py` asserts
+`compare_metadata` returns empty, and that assertion was checked against three deliberately
+sabotaged models — each in its own process, since mutating `__table__` twice corrupts the class:
+
+| Sabotage | Detected as |
+| --- | --- |
+| new column on `Frame`, no revision written | `add_column` |
+| `Alert.title` `String(200)` → `String(500)`, no revision | `modify_type` |
+| indexes cleared from `Alert`, no revision | `remove_index` |
+
+The middle one is what `compare_type=True` in `env.py` buys. Without it a type change is invisible
+to autogenerate, which is the exact class of drift that produced the original problem.
+
+**Two paths are resolved absolutely, on purpose.** `run_migrations()` builds its config from
+`Path(__file__).parents[1]`, not the working directory, and `env.py` puts `backend/` on `sys.path`
+itself. The Docker image has `WORKDIR /app` and the CLI may be invoked from the repo root; verified
+by running `run_migrations()` from `F:\Projects\prodos` and getting all five tables. The earlier
+`prepend_sys_path = .` alone would have worked on a laptop and failed in the container.
+
+**`alembic.ini` deliberately has no `sqlalchemy.url`.** `env.py` takes the URL from
+`app.config.settings`, so `.env` stays the single source of truth. A URL in the ini would silently
+shadow `.env` and point a migration at the wrong database — the worst available failure mode here.
+For the same reason `env.py` re-applies the Postgres `-c timezone=UTC` connect option that
+`database.py` sets; without it a migration run on a Cairo host would render `TIMESTAMPTZ` as
++03:00, which is the F-4 lesson.
+
+**`render_as_batch` is required, not decorative.** SQLite cannot `ALTER` most things. Without it
+the *second* migration would work in production and fail for everyone developing on SQLite, which
+is this project's default dev database.
+
+### Migrating at startup, and when to stop doing it
+
+Running `upgrade head` in the lifespan is a deliberate choice, not an oversight. It keeps every
+existing workflow working: `docker compose up -d`, `run.py`, and `smoke_test.py` all get their
+schema without a new manual step, which matters with four people's habits and a demo in days. The
+alternative — a separate `migrate` service — is the textbook answer and needs a compose change in
+both files plus a documented step everyone must remember.
+
+The cost is real and worth stating: **with two or more backend replicas starting at once, both run
+the migration and can race.** That is not the current topology (one backend in dev, one in the F-7
+pilot), so this is fine today. If the backend is ever scaled horizontally, move the migration into a
+one-shot `migrate` service gated by `depends_on: condition: service_completed_successfully` and take
+it out of the lifespan. The `run_migrations()` helper is a plain function, so that change is
+delete-one-line-and-add-a-service.
+
+Note for the container: the Dockerfile now copies `alembic.ini` and `migrations/`. It previously
+copied only `app/`, so the image had no migration assets and would have failed on boot with
+"No 'script_location' key".
+
+Regression: `smoke_test.py` 25/25 on SQLite and on PostgreSQL 16.10 — and the Postgres run left
+`alembic_version = bfd1100cc262`, which is the proof the migration really ran in the app path and
+not just in a test. Full suite 110 passed.
+
+No CONTRACT CHANGE: no model, column or type changed. This revision reproduces the existing schema
+exactly, which is the point — existing pilot databases stamp `bfd1100cc262` as their base.
+
+**To add the next migration**, from `backend/`:
+
+```powershell
+.\.venv\Scripts\python.exe -m alembic revision --autogenerate -m "add X to Y"
+# edit it by hand -- autogenerate cannot see data migrations or renames
+.\.venv\Scripts\python.exe -m alembic check    # must report no new operations
+```
+
+Never edit a revision that has already run somewhere other than a scratch database.
 
 ### F-10 · v2 backlog (do NOT start until M0–M4 done)
 

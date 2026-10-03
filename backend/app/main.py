@@ -1,11 +1,13 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from .database import Base, engine
 from .mqtt import (
     alerts_broadcaster,
     events_ingest_loop,
@@ -20,9 +22,28 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 
+def run_migrations() -> None:
+    """Bring the schema to head. Replaces `Base.metadata.create_all` (F-9).
+
+    create_all could not express "add a column" or "rename a table" — it only
+    ever creates what is missing, so any change to a model silently did nothing
+    to an existing database and only showed up as a crash in production. Alembic
+    records each change as an ordered, reversible revision.
+
+    Both paths are made absolute so this works regardless of the working
+    directory: the Docker image runs with WORKDIR /app, but a caller invoking it
+    from anywhere must not get a different database.
+    """
+    root = Path(__file__).resolve().parent.parent
+    cfg = Config(str(root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(root / "migrations"))
+    cfg.set_main_option("prepend_sys_path", str(root))
+    command.upgrade(cfg, "head")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    run_migrations()
     tasks = [
         asyncio.create_task(mqtt_ingest_loop()),
         asyncio.create_task(events_ingest_loop()),
