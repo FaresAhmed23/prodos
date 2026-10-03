@@ -185,7 +185,10 @@ prodos/
 ├── backend/
 │   ├── Dockerfile
 │   ├── requirements.txt          # fastapi, uvicorn[standard], sqlalchemy, psycopg[binary], pydantic, pydantic-settings, aiomqtt, httpx
-│   ├── requirements-dev.txt      # amqtt + websockets, only for scripts/smoke_test.py
+│   ├── requirements-dev.txt      # amqtt + websockets (scripts/smoke_test.py) + pytest (backend/tests/)
+│   ├── pytest.ini                # testpaths=tests, pythonpath=. — the pytest entrypoint is `python -m pytest` from backend/
+│   ├── tests/                    # F-6 suite: conftest (in-memory SQLite, bare-app client, loopback LLM stub)
+│   │                             #   + test_schemas / test_frames / test_alerts / test_explanation. 99 checks, no broker.
 │   ├── run.py                    # Windows-safe uvicorn entrypoint (selector event loop) — use this
 │   └── app/
 │       ├── __init__.py
@@ -245,9 +248,11 @@ should be fixed, and it stops once the provider works.
 Verified three ways, all against real processes: no key → template with `prompt` NULL; key + a stub
 chat-completions server → LLM output used, `Bearer` key sent, prompt stored; key + a closed port →
 template text delivered anyway with a warning. `explanation_logs` held 1:1 with alerts in every
-mode. Regression: `smoke_test.py` 27/27 on Mosquitto 2.1.2 + PostgreSQL 16.10 and the F-4 suite
-green. Note for F-6: the LLM path needs the stub server as a fixture, since there is no pytest
-coverage of it yet and no real key in the repo.
+mode. Regression: `smoke_test.py` 25/25 on Mosquitto 2.1.2 + PostgreSQL 16.10 and the F-4 suite
+green. Note for F-6 (now done): the LLM path needed the stub server as a fixture, since there was no
+pytest coverage of it and no real key in the repo. It is the `stub_llm` fixture in
+`backend/tests/conftest.py`, and the fallback contract "an unreachable model costs tone, not the
+alert" is asserted there rather than only described here.
 
 Windows note (do not "clean this up"): `aiomqtt` drives its socket via `add_reader`/`add_writer`,
 which `ProactorEventLoop` does not implement, so MQTT ingest dies with `NotImplementedError` and
@@ -327,7 +332,7 @@ Start-Process "$bin\postgres.exe" -ArgumentList "-D","$env:TEMP\pgdata","-p","54
 Start Postgres with `Start-Process`, not `pg_ctl start`: `pg_ctl` leaves the server attached to the
 console, so PowerShell blocks on it and killing the shell kills the database.
 
-Verified green on Mosquitto 2.1.2 + Postgres 16.10: `smoke_test.py` 27/27 and the F-4 acceptance
+Verified green on Mosquitto 2.1.2 + Postgres 16.10: `smoke_test.py` 25/25 and the F-4 acceptance
 suite 23/23, including the replay-dedup and status-transition checks. Re-ran on SQLite + amqtt
 afterwards to confirm the defaults are untouched.
 
@@ -448,7 +453,7 @@ Do:
 Accept: run fake sensor `--deauth` + detection stub → alert row exists in Postgres, `GET /alerts` returns it, a connected `/ws/alerts` client receives it within 5 seconds of the event's `detected_at`.
 
 Met: measured 0.02–0.25s from `created_at` to `/ws/alerts` delivery, every service running as its
-own process. `scripts/smoke_test.py` now asserts this chain (27 checks). `GET /alerts` filters by
+own process. `scripts/smoke_test.py` now asserts this chain (25 checks). `GET /alerts` filters by
 status; `PATCH /alerts/{id}` accepts only `acknowledged`/`resolved` and rejects `new` with 422;
 unknown id is 404. Replaying a `DetectionEvent` with a duplicate `event_id` does not create a
 second alert. Verified on PostgreSQL 16.10 and Mosquitto 2.1.2.
@@ -484,11 +489,56 @@ answer with a JSON object of exactly `title` / `explanation` / `recommended_acti
 wording freely, keep those three keys. `explanation_logs` starts collecting the (event → explanation)
 dataset from the moment this merges, so real traffic begins filling it before any prompt tuning.
 
-### F-6 · Backend test suite — Priority: MEDIUM
+### F-6 · Backend test suite — Priority: MEDIUM — **DONE**
 
 Do: pytest under `backend/tests/`: schema validation (valid/invalid FrameBatch, MAC normalization), `/frames/recent` filtering, alert PATCH transitions, explanation fallback path. Use an in-memory SQLite engine for DB tests (models are portable) and monkeypatch MQTT.
 
 Accept: pytest green from `backend/`; no network/broker required.
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest
+```
+
+99 checks, ~5s. `pytest.ini` sets `pythonpath = .` and `-p no:cacheprovider` so the run needs no
+`PYTHONPATH` and leaves no cache in the repo.
+
+Met: 99/99 green. **Hermetic by construction, and verified that way** — the run was repeated with
+every `python` process killed and nothing listening on 1883, with `DATABASE_URL` and all `LLM_*`
+unset. No test imports `aiomqtt` or names a broker, which `Select-String` over `backend/tests/`
+confirms mechanically.
+
+**Two deliberate choices worth not "fixing" later.**
+
+*The real routers, not `app.main`.* `conftest.py` mounts the four actual routers on a bare FastAPI
+app and overrides `get_db`. Importing the real `app.main` would mean running its lifespan, which
+opens an MQTT connection and spawns both ingest tasks — precisely what the acceptance criterion says
+must not happen. Every route exercised is the shipped one; only the lifespan is skipped. MQTT is
+excluded by never starting it rather than by monkeypatching a symbol, which is the stronger form of
+"monkeypatch MQTT": there is no mock to be misconfigured.
+
+*The LLM stub is a real loopback server.* F-5 asked for the stub as a fixture, and mocking
+`httpx.AsyncClient.post` would have satisfied that sentence while verifying almost nothing — the URL
+construction, the `Bearer` header and the response parser would all be bypassed. `stub_llm` runs
+`HTTPServer` on `127.0.0.1` port 0 (OS-assigned, so no fixed port to collide on) and records the
+request bodies. One socket on loopback, no external network, no broker.
+
+In-memory SQLite needs `poolclass=StaticPool` together with `check_same_thread=False`; a bare
+`sqlite://` gives each connection its own empty database and the tests fail confusingly.
+
+Regression: `smoke_test.py` 25/25 on SQLite + in-process amqtt, twice.
+
+Three defects the suite found while being written, all in the tests rather than the product, which
+is the useful outcome: a miscounted hex digit in an expected MAC, a wrong assumption that
+`event_type="meteor"` is a legal `EventType` — it is not, and the template's unknown-type fallback
+is reached via `anomaly`, a *valid* `EventType` with no dedicated builder — and a fallback
+assertion that had been written as a tautology (`assert x and "system" not in x or x` is always
+true) and would have passed no matter what the log row contained.
+
+One caveat carried over from F-8 and now asserted knowingly: SQLite does not round-trip tzinfo, so
+`/alerts` returns naive datetimes under these tests while PostgreSQL returns `Z`. The tests compare
+values and ordering, never the tz suffix, so this is invisible here — but do not "fix" a naive
+datetime by loosening an assertion.
 
 ### F-7 · Pilot deployment mode — Priority: MEDIUM (needed by Feb)
 
@@ -532,7 +582,7 @@ keys so a card can render a zero without special-casing.
 Verified against seeded data with known counts, on **both** backends: status counts, severity counts
 including the 3/4 and 7/8 band boundaries, the 24h window excluding older alerts, 1h-vs-24h, full
 feed coverage with no duplicates, cursor-plus-filter, unknown cursor → 400, and that the array shape
-is unchanged. Regression: `smoke_test.py` 27/27 twice and the F-4 suite green on Mosquitto 2.1.2 +
+is unchanged. Regression: `smoke_test.py` 25/25 twice and the F-4 suite green on Mosquitto 2.1.2 +
 PostgreSQL 16.10.
 
 One check passes on PostgreSQL and fails on SQLite, and it is **not** an F-8 defect: SQLite's

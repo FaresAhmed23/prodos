@@ -2,3 +2,4 @@
 #   pip install -r backend/requirements-dev.txt
 amqtt        # in-process MQTT broker, stands in for Mosquitto in scripts/smoke_test.py
 websockets   # WebSocket client for the /ws/frames check in scripts/smoke_test.py
+pytest       # backend/tests/ (F-6)
