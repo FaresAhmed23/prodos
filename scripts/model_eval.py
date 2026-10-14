@@ -58,7 +58,7 @@ ARABIC_RE = re.compile(r"[\u0600-\u06FF]")
 LATIN_LETTER_RE = re.compile(r"[A-Za-z]")
 
 
-SYSTEM_PROMPT = """You write a short cybersecurity alert for a small-business owner who has no technical knowledge in cybersecurity, they's busy and don't have time to research concepts.
+SYSTEM_PROMPT = """You write a short cybersecurity alert for a small-business owner who has no technical knowledge in cybersecurity, they're busy and don't have time to research concepts.
 
 Return ONLY valid JSON with exactly these fields:
 {

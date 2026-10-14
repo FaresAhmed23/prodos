@@ -17,6 +17,8 @@ import httpx
 from ..schemas import DetectionEvent
 from .explanation import Explanation
 
+import prompt
+
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -55,7 +57,7 @@ _USER_TEMPLATE = """Detected event:
 Write the alert."""
 
 
-def build_prompt(event: DetectionEvent) -> str:
+def build_prompt(event: DetectionEvent) -> str: # -- building the prompt will have it's own file for easier context building
     # model_dump_json, not model_dump: detected_at is a datetime and the JSON
     # column on the log row cannot store one.
     return _USER_TEMPLATE.format(event=event.model_dump_json(indent=2))
