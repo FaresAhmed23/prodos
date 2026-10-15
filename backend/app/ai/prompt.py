@@ -1,5 +1,5 @@
 """
-All prompt-related operations are here, the goal of this files is to encapsulate prompts
+All prompt-related operations are here, the goal of this file is to encapsulate prompts
 from the rest of the app to have better control and tracking for them.
 
 This file contains all the system prompt versions & builds the final message the llm is gonna get.
