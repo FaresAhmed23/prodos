@@ -1,0 +1,23 @@
+
+{
+  "networks": [
+    {
+      "ssid": "Kota",
+      "bssids": ["aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02"],
+      "channels": [1, 6, 11, 36],
+      "security": ["WPA2", "WPA3"]
+    },
+    {
+      "ssid": "BigKota123",
+      "bssids": ["aa:bb:cc:dd:ee:10"],
+      "channels": [6],
+      "security": ["WPA2"]
+    },
+        {
+      "ssid": "m7md'sBigAss",
+      "bssids": ["aa:bb:cc:dd:ee:14"],
+      "channels": [6],
+      "security": ["OPEN"]
+    }
+  ]
+}
