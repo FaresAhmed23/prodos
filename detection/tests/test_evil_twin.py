@@ -30,7 +30,7 @@ def test_legitimate_ap_raises_no_alerts(detector):
 
 
 def test_unrelated_network_ignored(detector):
-    assert detector.analyze([ap(ssid="NotKota", bssid="11:22:33:44:55:66")]) == []
+    assert detector.analyze([ap(ssid="m7mdIsGay", bssid="11:22:33:44:55:66")]) == []
 
 
 def test_unknown_bssid_flagged(detector):
