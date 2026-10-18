@@ -56,7 +56,7 @@ class LLMProvider:
         api_key: str,
         timeout: float = 5.0,
         language: str = "en",
-        prompt_version: str = "1.1"
+        prompt_version: str = "2.1"
     ) -> None:
         self._url = f"{base.rstrip('/')}/chat/completions"
         self._model = model

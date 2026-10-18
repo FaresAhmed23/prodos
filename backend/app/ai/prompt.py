@@ -28,7 +28,7 @@ def _load_prompts() -> dict:
         return json.load(file)
 
 
-def get_system_prompt(language: str = "en", version: str = "1.1") -> str:
+def get_system_prompt(language: str = "en", version: str = "2.1") -> str:
     """
     Retrieves a specific system prompt from prompts/prompts.json.
 
