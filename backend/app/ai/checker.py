@@ -56,11 +56,13 @@ MIN_ARABIC_SHARE = 0.60         # for lang="ar": Arabic letters / all letters
 MAX_ARABIC_SHARE_EN = 0.10      # for lang="en"
 
 COMPLEXITY_COFACTOR = 1.0
-MAX_COMPLEXITY_RATING = 0.25    # e.g. 40 words may carry ~10 points of complexity
+AR_COMPLEXITY_COFACTOR = 1.0
+MAX_COMPLEXITY_RATING = 0.25
+MAX_AR_COMPLEXITY_RATING = 0.25
  
 REQUIRED_FIELDS = ("title", "explanation", "recommended_action")
 
-COMPLEXITY_WORDS: dict[int, list[str]] = {
+EN_COMPLEXITY_WORDS: dict[int, list[str]] = {
     1: [
         "approximately", "additional", "assistance", "indicate", "currently",
         "numerous", "obtain", "require", "sufficient", "attempt", "verify",
@@ -129,6 +131,64 @@ COMPLEXITY_WORDS: dict[int, list[str]] = {
     ],
 }
 
+AR_COMPLEXITY_WORDS: dict[int, list[str]] = {
+    1: [  # formal / "newspaper" words
+        "تقريبا", "إضافي", "إضافية", "يشير", "حاليا", "عديدة", "يتطلب", "كاف",
+        "كافية", "محاولة", "التحقق", "تحقق", "يضمن", "لاحق", "بخصوص", "مستمر",
+        "مستمرة", "متكرر", "متكررة", "مفرط", "ملحوظ", "جوهري", "بالتزامن",
+        "متتالية", "علاوة", "يرصد", "رصد", "يحدد", "تحديد", "ينفذ", "يحافظ",
+        "حدوث", "مرتبط", "مرتبطة", "غير معتاد", "غير اعتيادي", "بصورة متكررة",
+        "على الأرجح", "بشكل متكرر", "محتمل", "محتملة", "ملموس", "تزامن",
+        "رصدنا", "لوحظ", "استمرار",
+    ],
+    2: [  # security words most adults have heard
+        "مشبوه", "مشبوهة", "غير مصرح", "غير مصرح به", "ضار", "ضارة", "خبيث",
+        "خبيثة", "شرعي", "شذوذ", "شاذ", "اعتراض", "يعترض", "انتحال", "ينتحل",
+        "تقليد", "اختراق", "مخترق", "مهاجم", "هجوم", "هجمات", "تشويش", "متسلل",
+        "تسلل", "احتيال", "احتيالي", "احتيالية", "مزور", "مزيف", "تزوير",
+        "تعطيل", "انقطاع", "غير محمي", "غير آمن", "تعرض", "تخفيف", "وقاية",
+        "حادث", "حادثة", "تلاعب", "عبث", "تخريب", "متعمد", "متعمدة", "فيروس",
+        "تهديد", "تهديدات", "ثغرة أمنية", "انتهاك", "مخادع", "خداع", "بيانات الاعتماد",
+        "تجسس", "منتحل",
+    ],
+    3: [  # IT vocabulary a non-technical owner may not know
+        "تشفير", "مشفر", "مشفرة", "مصادقة", "بروتوكول", "بروتوكولات",
+        "نطاق ترددي", "عرض النطاق", "برنامج ثابت", "تهيئة", "واجهة",
+        "بنية تحتية", "إرسال", "مرسل", "جهاز إرسال", "تردد", "ترددات", "عتبة",
+        "خوارزمية", "معامل", "مسؤول النظام", "شهادة رقمية", "زمن الاستجابة",
+        "سعة نقل", "بيانات وصفية", "نفق", "طابع زمني", "خط أساس",
+        "توقيع", "حمولة", "تشخيص", "شبكة فرعية", "بث", "تزامن زمني",
+        "مصدر الإشارة", "جهاز توجيه", "نقل البيانات", "اتصال لاسلكي",
+        "إعدادات الأمان", "خادم", "سجل الأحداث", "حركة البيانات",
+    ],
+    4: [  # specialist security terms
+        "تنصت", "تصيد", "تصيد احتيالي", "مصافحة", "مارق", "مارقة", "اختطاف",
+        "اختطاف الجلسة", "برمجية خبيثة", "برمجيات خبيثة", "برنامج فدية",
+        "برمجية فدية", "جدار حماية", "جدار ناري", "بوابة", "ثغرة", "ثغرات",
+        "استغلال", "استطلاع", "فك التشفير", "إعادة الإرسال", "قناة", "قنوات",
+        "باب خلفي", "شبكة روبوتات", "برامج تجسس", "مسجل المفاتيح",
+        "قياس عن بعد", "تعمية", "بصمة رقمية", "تحديد المواقع", "هجوم وسيط",
+        "اعتراض الحزم", "تحليل الحزم", "مسح الشبكة", "رصد الشبكة", "حقن",
+        "هجوم إعادة", "تخمين كلمات المرور", "كسر كلمة المرور", "ثغرة يوم الصفر",
+        "اختبار اختراق", "كشف التسلل", "تتبع الإشارة", "تثليث الإشارة",
+    ],
+    5: [  # wireless / network jargon (transliterated and translated forms)
+        "اس اس اي دي", "اس اس آي دي", "إس إس آي دي", "بي اس اس اي دي",
+        "بي إس إس آي دي", "ماك", "عنوان ماك", "عنوان الماك", "نقطة الوصول",
+        "نقطة وصول", "نقاط الوصول", "الرجل في المنتصف", "الرجل الوسيط",
+        "هجوم الوسيط", "التوأم الشرير", "فك المصادقة", "إلغاء المصادقة",
+        "فصل المصادقة", "إلغاء الارتباط", "فك الارتباط", "إطار", "إطارات",
+        "حزمة", "حزم", "حزمة بيانات", "إشارة المنارة", "إطار المنارة",
+        "طلب فحص", "استجابة فحص", "قوة الإشارة", "مؤشر قوة الإشارة",
+        "وضع المراقبة", "وضع الاستماع", "وضع عشوائي", "حجب الخدمة",
+        "رفض الخدمة", "هجوم حجب الخدمة", "بوابة مقيدة", "رقم التسلسل",
+        "عنوان آي بي", "عنوان الإنترنت", "دي إن إس", "تي سي بي", "يو دي بي",
+        "تي إل إس", "إس إس إل", "إطارات الإدارة المحمية", "إطار الإدارة",
+        "إطارات الإدارة", "واي فاي المحمي", "دبليو بي إيه", "وي بي إيه",
+        "المصافحة الرباعية", "طلب ارتباط", "إطار تحكم", "مفتاح التشفير الرئيسي",
+    ],
+}
+
 BANNED_WORDS: dict[str, list[str]] = {
     "en": [
         "deauth", "deauthentication", "bssid", "ssid", "802.11", "packet",
@@ -147,19 +207,56 @@ UNSAFE_PHRASES: dict[str, list[str]] = {
     "ar": [],  # TODO: Add arabic words
 }
 
+#ِArabic words preparing
+_AR_DIACRITICS_RE = re.compile(r"[ً-ٰٟـ]")  # harakat, dagger alef, tatweel
+_AR_TRANSLATE = str.maketrans({
+    "أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا",
+    "ى": "ي", "ة": "ه", "ؤ": "و", "ئ": "ي",
+})
+_AR_TOKEN_RE = re.compile(r"[ء-غف-ي]+")
+_AR_LETTERS = "ء-غف-ي"
+_AR_PREFIXES = ("وبال", "وال", "بال", "كال", "فال", "لل", "ال", "و", "ف", "ب", "ل", "ك", "س")
+_AR_SUFFIXES = ("ات", "ون", "ين", "ان", "ها", "هم", "هن", "كم", "كن", "نا", "ي", "ه", "ك", "ا")
+ 
+ 
+def normalize_arabic(text: str) -> str:
+    """Remove diacritics/tatweel and unify letter variants so spelling differences
+    (أ/إ/ا, ة/ه, ى/ي) don't hide a dictionary word."""
+    return _AR_DIACRITICS_RE.sub("", text).translate(_AR_TRANSLATE)
+
+
 # Built once at import: Preprocessing words and sentences in COMPLEXITY_WORDS to use them
 # effeciently
 _COMPLEX_PHRASES: list[tuple[re.Pattern[str], str, int]] = []
 _COMPLEX_LOOKUP: dict[str, int] = {}
-for _level, _entries in COMPLEXITY_WORDS.items():
+for _level, _entries in EN_COMPLEXITY_WORDS.items():
     for _entry in _entries:
         if re.search(r"[\s\-.]", _entry):
             _COMPLEX_PHRASES.append((
                 re.compile(rf"(?<![\w]){re.escape(_entry)}s?(?![\w])"), _entry, _level))
         else:
-            # keep the HIGHEST level if a word is listed twice
+            # keep the HIGHEST level of a word if listed twice
             _COMPLEX_LOOKUP[_entry] = max(_level, _COMPLEX_LOOKUP.get(_entry, 0))
 _COMPLEX_PHRASES.sort(key=lambda item: len(item[1]), reverse=True)
+
+
+# Arabic: same idea, with Arabic boundaries and optional attached prefix/suffix.
+_AR_PHRASES: list[tuple[re.Pattern[str], str, int]] = []
+_AR_LOOKUP: dict[str, int] = {}
+_AR_PREFIX_ALT = "|".join(sorted(_AR_PREFIXES, key=len, reverse=True))
+
+for _level, _entries in AR_COMPLEXITY_WORDS.items():
+    for _entry in _entries:
+        _norm = normalize_arabic(_entry)
+        if " " in _norm:
+            _AR_PHRASES.append((
+                re.compile(
+                    rf"(?<![{_AR_LETTERS}])(?:{_AR_PREFIX_ALT})?{re.escape(_norm)}"
+                    rf"(?:ات|ين|ون|ه|ها|هم)?(?![{_AR_LETTERS}])"),
+                _entry, _level))
+        else:
+            _AR_LOOKUP[_norm] = max(_level, _AR_LOOKUP.get(_norm, 0))
+_AR_PHRASES.sort(key=lambda item: len(item[1]), reverse=True)
 
 # Result objects
 @dataclass(frozen=True)
@@ -212,7 +309,6 @@ _SENTENCE_SPLIT_RE = re.compile(r"[.!?؟]+(?:\s+|$)")
 _WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
 _ARABIC_LETTER_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F]")
 _BULLET_RE = re.compile(r"(^|\n)\s*(?:[-*•]|\d+[.)])\s+")
- 
  
 def normalize_digits(text: str) -> str:
     """Arabic-Indic digits -> Western digits."""
@@ -333,36 +429,85 @@ def _lookup_level(word: str) -> tuple[str, int] | None:
                     return candidate, _COMPLEX_LOOKUP[candidate]
     return None
 
-def rate_complexity(text: str) -> ComplexityRating:
-    """Weighted complexity of ENGLISH text.
- 
-    rating = (sum of each complex word's level) / (word_count * COMPLEXITY_COFACTOR)
-    Level 5 counts as five level-1 words; unlisted words count 0.
-    Reusable on any text (e.g. chat answers); it only reads the text.
-    """
+def _ar_lookup_level(token: str) -> tuple[str, int] | None:
+    """Level of one normalized Arabic token. Tries the token as written, then with
+    one attached prefix removed (ال، و، ب، ل...) and/or one suffix removed
+    (ات، ون، ها...), always keeping a stem of at least 3 letters."""
+    if token in _AR_LOOKUP:
+        return token, _AR_LOOKUP[token]
+    for prefix in [""] + [p for p in _AR_PREFIXES if token.startswith(p)]:
+        base = token[len(prefix):]
+        if len(base) < 3:
+            continue
+        if prefix and base in _AR_LOOKUP:
+            return base, _AR_LOOKUP[base]
+        for suffix in _AR_SUFFIXES:
+            if base.endswith(suffix) and len(base) - len(suffix) >= 3:
+                stem = base[: -len(suffix)]
+                # feminine plural: مصادقة -> مصادقات (ة became ه when normalized)
+                for candidate in ((stem, stem + "ه") if suffix == "ات" else (stem,)):
+                    if candidate in _AR_LOOKUP:
+                        return candidate, _AR_LOOKUP[candidate]
+    return None
+
+def _hits_en(text: str) -> list[tuple[str, int]]:
     lowered = normalize_digits(_strip_identifiers(text)).lower()
     hits: list[tuple[str, int]] = []
- 
     # 1) multi-word phrases first (and blank them out so their parts aren't re-counted)
     for pattern, entry, level in _COMPLEX_PHRASES:
         found = pattern.findall(lowered)
         if found:
             hits.extend([(entry, level)] * len(found))
             lowered = pattern.sub(" ", lowered)
- 
     # 2) single words
     for token in re.findall(r"[a-z][a-z0-9]*", lowered):
         match = _lookup_level(token)
         if match:
             hits.append(match)
+    return hits
  
-    word_count = max(len(_WORD_RE.findall(text)), 1)
+ 
+def _hits_ar(text: str) -> list[tuple[str, int]]:
+    normalized = normalize_arabic(_strip_identifiers(text))
+    hits: list[tuple[str, int]] = []
+    for pattern, entry, level in _AR_PHRASES:
+        found = pattern.findall(normalized)
+        if found:
+            hits.extend([(entry, level)] * len(found))
+            normalized = pattern.sub(" ", normalized)
+    for token in _AR_TOKEN_RE.findall(normalized):
+        match = _ar_lookup_level(token)
+        if match:
+            hits.append(match)
+    # Latin-script jargon inside Arabic text (BSSID, SSID, MAC...) is scored by
+    # the English dictionary; it never matches Arabic letters.
+    hits.extend(_hits_en(text))
+    return hits
+
+def rate_complexity(text: str, lang: str = "en") -> ComplexityRating:
+    """Weighted complexity of text in `lang` ("en" or "ar").
+ 
+    rating = (sum of each complex word's level) / (word_count * cofactor)
+    Level 5 counts as five level-1 words; unlisted words count 0. The cofactor is
+    COMPLEXITY_COFACTOR for English and AR_COMPLEXITY_COFACTOR for Arabic.
+    Reusable on any text (e.g. chat answers); it only reads the text.
+    """
+    if lang == "ar":
+        hits = _hits_ar(text)
+        word_count = len(_WORD_RE.findall(normalize_arabic(text)))
+        cofactor = AR_COMPLEXITY_COFACTOR
+    else:
+        hits = _hits_en(text)
+        word_count = len(_WORD_RE.findall(text))
+        cofactor = COMPLEXITY_COFACTOR
+    word_count = max(word_count, 1)
     score = sum(level for _, level in hits)
-    rating = score / (word_count * COMPLEXITY_COFACTOR)
+    rating = score / (word_count * cofactor)
     return ComplexityRating(rating=rating, score=score, word_count=word_count, hits=tuple(hits))
  
 def check_complexity(text: str, lang: str) -> list[Failure]:
-    """Readability checks: sentence length, long-word share, weighted complexity."""
+    """Readability checks: sentence length, long-word share (English only),
+    and the weighted complexity rating (English and Arabic)."""
     failures: list[Failure] = []
     for sentence in split_sentences(text):
         n_words = len(_WORD_RE.findall(sentence))
@@ -377,12 +522,14 @@ def check_complexity(text: str, lang: str) -> list[Failure]:
             if share > MAX_LONG_WORD_SHARE:
                 failures.append(Failure(
                     "complexity", f"{share:.0%} of words are very long; use simpler words"))
-        rated = rate_complexity(text)
-        if rated.rating > MAX_COMPLEXITY_RATING:
+    if lang in ("en", "ar"):
+        limit = MAX_AR_COMPLEXITY_RATING if lang == "ar" else MAX_COMPLEXITY_RATING
+        rated = rate_complexity(text, lang)
+        if rated.rating > limit:
             failures.append(Failure(
                 "complexity",
-                f"text is too complex (rating {rated.rating:.2f}, max {MAX_COMPLEXITY_RATING}); "
-                f"replace: {', '.join(rated.worst())}"))
+                f"text is too complex for non-technical users"
+                f"Avoid these word (sorted from the worst to the least worst): {', '.join(rated.worst())}"))
     return failures
 
 # /complexity
