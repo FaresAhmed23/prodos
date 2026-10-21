@@ -200,7 +200,8 @@ BANNED_WORDS: dict[str, list[str]] = {
  
 UNSAFE_PHRASES: dict[str, list[str]] = {
     "en": [
-        "hack back", "attack", "jam", "retaliate", "take revenge",
+        "hack back", "attack", "jam", "jamming", "jammed", "retaliate",
+        "retaliating", "retaliation", "take revenge",
         "send disconnect", "track down", "confront the person",
         "disable your security", "turn off your firewall",
     ],
@@ -275,6 +276,7 @@ class CheckResult:
         return retry_feedback(self.failures)
 
 #complexity rating summary object
+@dataclass(frozen=True)
 class ComplexityRating:
     rating: float                       # score / (word_count * COMPLEXITY_COFACTOR)
     score: int                          # sum of weights of all complex words found
@@ -347,7 +349,7 @@ def extract_json(reply: str) -> tuple[dict | None, list[Failure]]:
         if isinstance(data, dict):
             return data, []
         return None, [Failure("json", "reply has JSON format but not an object")]
-    return None, [Failure("json", "reply doesn not contain valid JSON format")]
+    return None, [Failure("json", "reply does not contain valid JSON format")]
  
  
 def parse_explanation(reply: str) -> tuple[Explanation | None, list[Failure]]:
@@ -387,7 +389,7 @@ def check_sentence_count(text: str, name: str, max_sentences: int) -> list[Failu
     """Checks the length of an Explanation field or a whole reply, in sentences."""
     n = len(split_sentences(text))
     if n > max_sentences:
-        return [Failure("sentences length", f"{name} has {n} sentences, max number of sentences shoud be: {max_sentences}")]
+        return [Failure("sentences length", f"{name} has {n} sentences, max number of sentences should be: {max_sentences}")]
     return []
  
  
@@ -528,7 +530,7 @@ def check_complexity(text: str, lang: str) -> list[Failure]:
         if rated.rating > limit:
             failures.append(Failure(
                 "complexity",
-                f"text is too complex for non-technical users"
+                f"text is too complex for non-technical users. "
                 f"Avoid these word (sorted from the worst to the least worst): {', '.join(rated.worst())}"))
     return failures
 
@@ -549,15 +551,21 @@ def banned_word_hits(text: str, lang: str) -> list[str]:
  
 def check_banned_words(text: str, lang: str) -> list[Failure]:
     hits = banned_word_hits(text, lang)
-    if hits>2:
+    if len(hits)>2:
         return [Failure("jargon", f"technical words not allowed: {', '.join(hits)}")]
     return []
  
  
 def check_safety(text: str, lang: str) -> list[Failure]:
+    """Rejects advice that attacks, retaliates or disables the owner's security.
+    Terms match as WHOLE words (optionally with s/es/d/ed/ing), so "jam" does not
+    flag "jamboree" or "jammed door"-style substrings inside other words."""
     lowered = text.lower()
     terms = UNSAFE_PHRASES["en"] + (UNSAFE_PHRASES.get(lang, []) if lang != "en" else [])
-    hits = [t for t in terms if t in lowered]
+    hits = [
+        t for t in terms
+        if re.search(rf"(?<!\w){re.escape(t.lower())}(?:s|es|d|ed|ing)?(?!\w)", lowered)
+    ]
     if hits:
         return [Failure("safety", f"unsafe advice (Prodos only observes and advises): {', '.join(hits)}")]
     return []
