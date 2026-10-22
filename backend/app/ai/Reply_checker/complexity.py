@@ -31,6 +31,22 @@ from .helpers import (
 )
 from .results import Failure
 
+#complexity rating summary object
+@dataclass(frozen=True)
+class ComplexityRating:
+    rating: float                       # score / (word_count * COMPLEXITY_COFACTOR)
+    score: int                          # sum of weights of all complex words found
+    word_count: int
+    hits: tuple[tuple[str, int], ...]   # (word_or_phrase, level), one per occurrence
+ 
+    def worst(self, n: int = 5) -> list[str]:
+        """The n most complex distinct words found, for readable error messages."""
+        seen: dict[str, int] = {}
+        for word, level in self.hits:
+            seen[word] = level
+        ordered = sorted(seen.items(), key=lambda val_key: val_key[1], reverse=True)
+        return [f"{w} (level {lvl})" for w, lvl in ordered[:n]]
+
 # Built once at import: Preprocessing words and sentences in COMPLEXITY_WORDS to use them
 # effeciently
 _COMPLEX_PHRASES: list[tuple[re.Pattern[str], str, int]] = []
@@ -63,23 +79,6 @@ for _level, _entries in AR_COMPLEXITY_WORDS.items():
         else:
             _AR_LOOKUP[_norm] = max(_level, _AR_LOOKUP.get(_norm, 0))
 _AR_PHRASES.sort(key=lambda item: len(item[1]), reverse=True)
-
-
-#complexity rating summary object
-@dataclass(frozen=True)
-class ComplexityRating:
-    rating: float                       # score / (word_count * COMPLEXITY_COFACTOR)
-    score: int                          # sum of weights of all complex words found
-    word_count: int
-    hits: tuple[tuple[str, int], ...]   # (word_or_phrase, level), one per occurrence
- 
-    def worst(self, n: int = 5) -> list[str]:
-        """The n most complex distinct words found, for readable error messages."""
-        seen: dict[str, int] = {}
-        for word, level in self.hits:
-            seen[word] = level
-        ordered = sorted(seen.items(), key=lambda val_key: val_key[1], reverse=True)
-        return [f"{w} (level {lvl})" for w, lvl in ordered[:n]]
 
 #----------------------------------------------------------------
 #complexity
