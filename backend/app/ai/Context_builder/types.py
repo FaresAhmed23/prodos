@@ -3,21 +3,28 @@
 No logic that imports database/incidents/contextbuilding lives here, so
 there are no circular imports.
 """
-
-
-
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.schemas import DetectionEvent
 from app.ai.Context_builder.config import SiteConfig
 
 
+def ensure_utc(dt: datetime | None) -> datetime | None:
+    """Naive -> aware UTC (SQLite returns naive); aware -> converted to UTC."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 @dataclass
 class Incident:
-    """Aggregate of related events: same site, same key, no gap > gap_minutes."""
+    """Aggregation of related events: same site, same key, no gap > gap_minutes."""
     incident_id: str
     site_id: str
     incident_key: str
@@ -28,7 +35,7 @@ class Incident:
     max_severity: int
     max_confidence: float
     sensor_ids: list[str] = field(default_factory=list)
-    explained_alert_id: str | None = None
+    explained_alert_id: str | None = None # points to the last explanation of the last event linked to an Incident
     explained_at: datetime | None = None
     explained_lang: str | None = None
     explained_severity: int | None = None
@@ -36,22 +43,44 @@ class Incident:
 
     @property
     def duration_s(self) -> int:
-        """Seconds between first_seen_at and last_seen_at."""
-        raise NotImplementedError
+        """Seconds between first_seen_at and last_seen_at (never negative)."""
+        delta = ensure_utc(self.last_seen_at) - ensure_utc(self.first_seen_at)
+        return max(0, int(delta.total_seconds()))
 
     def is_active(self, now: datetime, gap_minutes: int) -> bool:
         """True if last_seen_at is within gap_minutes of now."""
-        raise NotImplementedError
+        silence = ensure_utc(now) - ensure_utc(self.last_seen_at)
+        return silence.total_seconds() <= gap_minutes * 60
 
     def absorb(self, event: DetectionEvent) -> None:
         """Fold an event in: count+1, max severity/confidence, min/max
         timestamps (handles out-of-order events), union of sensor ids."""
-        raise NotImplementedError
+        when = ensure_utc(event.detected_at)
+        self.event_count += 1
+        self.max_severity = max(self.max_severity, event.severity)
+        self.max_confidence = max(self.max_confidence, event.confidence)
+        self.first_seen_at = min(ensure_utc(self.first_seen_at), when)
+        self.last_seen_at = max(ensure_utc(self.last_seen_at), when)
+        for sensor_id in event.sensor_ids:
+            if sensor_id not in self.sensor_ids:
+                self.sensor_ids.append(sensor_id)
 
     @classmethod
-    def from_event(cls, event: DetectionEvent, site_id: str, key: str) -> Incident:
+    def create_from_event(cls, event: DetectionEvent, site_id: str, key: str) -> Incident:
         """Create a brand-new incident (count=1) from its first event."""
-        raise NotImplementedError
+        when = ensure_utc(event.detected_at)
+        return cls(
+            incident_id=str(uuid.uuid4()),
+            site_id=site_id,
+            incident_key=key,
+            event_type=event.event_type,
+            first_seen_at=when,
+            last_seen_at=when,
+            event_count=1,
+            max_severity=event.severity,
+            max_confidence=event.confidence,
+            sensor_ids=list(dict.fromkeys(event.sensor_ids)),  # dedupe, keep order
+        )
 
 
 @dataclass
@@ -84,7 +113,12 @@ class SiteState:
     @classmethod
     def unknown(cls, site_id: str, cfg: SiteConfig) -> SiteState:
         """ALT PATH 2.2: generic filler when the site is not in the database."""
-        raise NotImplementedError
+        return cls(
+            site_id=site_id,
+            found=False,
+            name=cfg.unknown_site_name,
+            notes=cfg.unknown_filler,
+        )
 
 
 @dataclass
