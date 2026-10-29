@@ -25,11 +25,6 @@ class AlertQueries:
             explanation = alert.explanation
             action = alert.recommended_action
 
-            if lang:
-                alt = s.get(models.AlertText, (alert_id, lang))  # PK order: alert_id, lang
-                if alt is not None:
-                    title, explanation, action = alt.title, alt.explanation, alt.recommended_action
-
             return ExplainedAlert(
                 alert_id=alert.alert_id,
                 title=title,
