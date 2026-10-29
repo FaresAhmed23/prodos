@@ -118,7 +118,7 @@ class IncidentQueries:
 
     def set_explained(self, incident_id: str, alert_id: str, lang: str,
                       severity: int, event_count: int, at: datetime) -> None:
-        """Record which alert explains the incident (write-back for ALT PATH 3)."""
+        """Record which alert explains the incident (The write-back for ALT PATH 3)."""
         with self.session() as s:
             row = s.get(models.Incident, incident_id)
             if row is None:

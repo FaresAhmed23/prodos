@@ -71,7 +71,7 @@ def get_database() -> Database:
 
 
 def reset_database(db: Database | None = None) -> None:
-    """Tests only: replace (or clear) the singleton, like with an in-memory SQLite db."""
+    """Tests only: replace (or clear) the singleton, like with an in-memory SQLite db. Doesn't reset the actual database."""
     global _instance
     with _lock:
         _instance = db
