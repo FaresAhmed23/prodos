@@ -24,8 +24,8 @@ class ReuseConfig:
 @dataclass(frozen=True)
 class SiteConfig:
     default_site_id: str = "default"
-    unknown_site_name: str = "your business"
-    unknown_filler: str = "No business details are on file."
+    unknown_site_name: str = "The business"
+    unknown_filler: str = "No business details are available at the moment."
     max_sensors_listed: int = 10
 
 

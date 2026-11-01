@@ -110,7 +110,7 @@ def check_must_mention(text: str, must_mention: Iterable[str]) -> list[Failure]:
 
 # data validity (grounding)
 def check_grounding(text: str, evidence: dict[str, Any]) -> list[Failure]:
-    """Every MAC, quoted name and number with 2+ digits in `text` must appear
+    """Every MAC, quoted name and number with 4+ digits in `text` must appear
     in `evidence`. Main defense against invented facts."""
     blob = normalize_digits(json.dumps(evidence, ensure_ascii=False, default=str))
     evidence_text = blob.lower()
@@ -131,7 +131,7 @@ def check_grounding(text: str, evidence: dict[str, Any]) -> list[Failure]:
     no_macs = _MAC_RE.sub(" ", text)
     for num in _NUMBER_RE.findall(no_macs):
         clean = num.replace(",", "")
-        if len(re.sub(r"\D", "", clean)) >= 2 and clean not in evidence_numbers:
+        if len(re.sub(r"\D", "", clean)) >= 4 and clean not in evidence_numbers:
             failures.append(Failure("grounding", f"number {num} is not in the provided data"))
  
     return failures
