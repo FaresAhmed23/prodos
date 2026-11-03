@@ -1,12 +1,9 @@
 """Read-only access to site_profile and sensors (mixin)."""
 from __future__ import annotations
 
-from collections import Counter
-
 from sqlalchemy import select
 
 from app import models
-
 
 class SiteQueries:
     """Mixin for Database."""
@@ -48,3 +45,6 @@ class SiteQueries:
                 }
                 for r in rows
             ]
+
+    def resolve_site_id(sensor_ids: list[str]) -> list[str]:
+        pass # TODO: return all sites for all the given sensors
