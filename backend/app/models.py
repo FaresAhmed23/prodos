@@ -46,10 +46,9 @@ class Event(Base):
     details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
-    # Linking events to incidents
-    incident_id: Mapped[str] = mapped_column(String(36), ForeignKey("incidents.incident_id"))
+    # Edit: Linking events to incidents
+    incident_id: Mapped[str] = mapped_column(String(36), ForeignKey("incidents.incident_id"), nullable=True)
 
-# --------------------------- Edited --------------------
 class Alert(Base):
     __tablename__ = "alerts"
 
@@ -62,7 +61,7 @@ class Alert(Base):
     recommended_action: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), default="new", index=True)
 
-    # Additions:
+    # Edit: Additions:
     lang: Mapped[str] = mapped_column(String(8), nullable=True)
 
 class ExplanationLog(Base):
@@ -81,11 +80,11 @@ class ExplanationLog(Base):
     output: Mapped[dict[str, Any]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
-    # new columns to better specifiy an Explanation log
+    # Edit: new columns to better specifiy an Explanation log
     lang: Mapped[str] = mapped_column(String(8))
     site_id: Mapped[str] = mapped_column(String(64), ForeignKey("site_profile.site_id"))
 
-    # new columns for performance measurement
+    # Edit: new columns for performance measurement
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=True)
     fallback_reason: Mapped[str] = mapped_column(String(512), nullable=True)
     attempts: Mapped[int] = mapped_column(SmallInteger, nullable=True)
@@ -102,8 +101,8 @@ class Sensor(Base):
     registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     status: Mapped[str] = mapped_column(String(16), default="offline", index=True)
 
-    #Linking the sensors to businesses
-    site_id: Mapped[str] = mapped_column(String(64), ForeignKey("site_profile.site_id"))
+    # Edit: Linking the sensors to businesses
+    site_id: Mapped[str] = mapped_column(String(64), ForeignKey("site_profile.site_id"), nullable=True)
 
 
 # ====================================================================================
@@ -150,7 +149,7 @@ class Incident(Base):
     sensor_ids: Mapped[list] = mapped_column(JSON, default=list)
 
     # Reuse write-back (ALT PATH 3). Plain column.
-    explained_alert_id: Mapped[str] = mapped_column(String(36), ForeignKey("alerts.alert_id"))
+    explained_alert_id: Mapped[str] = mapped_column(String(36), ForeignKey("alerts.alert_id"), nullable=True)
     explained_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True))
     explained_lang: Mapped[str | None] = mapped_column(String(8))

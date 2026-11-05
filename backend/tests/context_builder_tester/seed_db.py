@@ -125,6 +125,7 @@ def build_rows(data: dict, now: datetime) -> dict:
             alert_id=a["alert_id"], event_id=a["event_id"], created_at=created,
             severity=a["severity"], title=a["title"], explanation=a["explanation"],
             recommended_action=a["recommended_action"], status=a["status"],
+            lang=a["lang"],
         ))
 
         provider = a["provider"]  # "llm" | "template" | "reused"
@@ -142,11 +143,11 @@ def build_rows(data: dict, now: datetime) -> dict:
             output={"title": a["title"], "explanation": a["explanation"],
                     "recommended_action": a["recommended_action"]},
             created_at=created,
+            lang=a["lang"],
+            site_id=incidents[ref]["site_id"],
             latency_ms=2400 if provider == "llm" else None,
             fallback_reason="no_llm_configured" if provider == "template" else None,
-            lang=a["lang"],
             attempts=1 if provider == "llm" else None,
-            site_id=incidents[ref]["site_id"],
         ))
 
     incident_rows = [models.Incident(**v) for v in incidents.values()]
