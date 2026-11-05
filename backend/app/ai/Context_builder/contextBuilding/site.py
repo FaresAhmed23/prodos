@@ -16,7 +16,7 @@ class SiteStateLoader:
         return SiteState.unknown(...) and a warning 'business_not_found'."""
         profile = self._db.get_site_profile(site_id)
         if profile is None:
-            return SiteState.unknown(site_id, self._cfg), ["business_not_found"]
+            return SiteState.unknown(site_id, self._cfg), [f"business_not_found-id: {site_id}"]
 
         sensors = self._db.list_sensors(site_id, self._cfg.max_sensors_listed)
         state = SiteState(

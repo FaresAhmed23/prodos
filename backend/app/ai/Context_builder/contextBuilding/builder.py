@@ -31,12 +31,14 @@ class ContextBuilder:
         returns self._degraded(...). Call only for fresh, non-replayed events,
         because it increments the incident's event_count."""
         warnings: list[str] = []
-        try:
-            site_id, w = self._resolve_site(event, site_id)
-            warnings += w
 
-            site, w = self._site_loader.load(site_id)
-            warnings += w
+        site_id, w = self._resolve_site(event, site_id)
+        warnings += w
+
+        site, w = self._site_loader.load(site_id)
+        warnings += w
+
+        try:
 
             lang = lang or (site.primary_language if site.found else None) \
                 or self._cfg.context.default_lang
@@ -58,7 +60,7 @@ class ContextBuilder:
         except Exception as exc:
             log.warning("context build failed, returning degraded context: %s",
                         exc, exc_info=True)
-            return self._degraded(event, site_id, lang, str(exc))
+            return self._degraded(event, site_id, lang, reason=str(exc), warnings=warnings)[0]
 
     async def abuild(self, event: DetectionEvent, site_id: str | None = None,
                      lang: str | None = None) -> Context:
@@ -88,15 +90,15 @@ class ContextBuilder:
         resolved, warnings = self._db.resolve_site_id(event.sensor_ids)
         if resolved:
             return resolved, warnings
-        if "sensor_without_site" not in warnings:
-            warnings.append("sensor_without_site")
         return self._cfg.site.default_site_id, warnings
 
     def _degraded(self, event: DetectionEvent, site_id: str | None,
-                  lang: str | None, reason: str) -> Context:
+                  lang: str | None, reason: str, warnings: list[str]) -> tuple[Context, str]:
         """Minimal Context with a temporary, unsaved incident and warning
         'db_degraded'. Touches no database, so it cannot fail the same way."""
         site_id = site_id or self._cfg.site.default_site_id
+        if "db_degraded" not in warnings:
+            warnings.append("db_degraded")
         return Context(
             event=event,
             site_id=site_id,
@@ -106,6 +108,6 @@ class ContextBuilder:
             site=SiteState.unknown(site_id, self._cfg.site),
             explained_alert=None,
             is_new_incident=True,
-            warnings=["db_degraded"],
+            warnings=warnings,
             built_at=datetime.now(timezone.utc),
-        )
+        ), reason

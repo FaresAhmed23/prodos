@@ -73,6 +73,7 @@
     {"event_id": "evt-hotel-06", "event_type": "deauth_flood", "minutes_ago": 4, "severity": 7, "confidence": 0.85, "sensor_ids": ["hotel-s1"], "details": {"src_mac": "C0:FF:EE:12:34:56", "rate_per_sec": 60, "window_s": 30, "count": 50}, "incident_ref": "hotel-deauth-live"},
     {"event_id": "evt-hotel-07", "event_type": "deauth_flood", "minutes_ago": 3, "severity": 7, "confidence": 0.88, "sensor_ids": ["hotel-s1"], "details": {"src_mac": "C0:FF:EE:12:34:56", "rate_per_sec": 63, "window_s": 30, "count": 55}, "incident_ref": "hotel-deauth-live"},
     {"event_id": "evt-hotel-08", "event_type": "deauth_flood", "minutes_ago": 2, "severity": 7, "confidence": 0.9, "sensor_ids": ["hotel-s1"], "details": {"src_mac": "C0:FF:EE:12:34:56", "rate_per_sec": 70, "window_s": 30, "count": 62}, "incident_ref": "hotel-deauth-live"}
+
   ],
 
   "alerts": [

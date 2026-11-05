@@ -62,7 +62,7 @@ class SiteQueries:
             site_ids = Counter([row.site_id for row in results])
 
             if stray_sensors:
-                warnings.append(f"Couldn't get the sites for sensors: {', '.join(stray_sensors)}")
+                warnings.append(f"sensor_without_site: {', '.join(stray_sensors)}")
 
             # if len(site_ids) > 1: IGNORE FOR NOW
             #     warnings.append(f"some of the sensors belong to different sites: {', '.join()}")
