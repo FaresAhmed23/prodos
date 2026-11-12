@@ -7,7 +7,6 @@ from `explain` as "fall back", not as "drop the alert".
 
 from dataclasses import dataclass
 from typing import Protocol
-
 from ..schemas import DetectionEvent
 
 
