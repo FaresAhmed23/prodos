@@ -19,6 +19,8 @@ from .explanation import Explanation
 
 from prompt import build_prompt, get_system_prompt
 
+from app.ai.event_prompt_builder import promptBuilder
+
 log = logging.getLogger(__name__)
 
 def _extract(content: str) -> Explanation:

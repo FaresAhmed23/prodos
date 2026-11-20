@@ -5,8 +5,8 @@ from datetime import datetime, timedelta, timezone
 
 from app.ai.Context_builder.config import IncidentConfig, ReuseConfig
 from app.ai.Context_builder.database import Database
-from keys import incident_key
-from related import RelatedSelector
+from app.ai.Context_builder.Incidents.keys import incident_key
+from app.ai.Context_builder.Incidents.related import RelatedSelector
 from app.ai.Context_builder.types import (
     ExplainedAlert, Incident, IncidentResolution, ensure_utc,
 )

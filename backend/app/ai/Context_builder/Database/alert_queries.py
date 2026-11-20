@@ -31,7 +31,7 @@ class AlertQueries:
                 explanation=explanation,
                 recommended_action=action,
                 severity=alert.severity,
-                lang=lang or "en",
+                lang=alert.lang or lang,
                 created_at=self._utc(alert.created_at),
                 status=alert.status,
             )

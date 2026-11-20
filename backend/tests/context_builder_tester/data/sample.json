@@ -1,0 +1,155 @@
+{
+  "businesses": [
+    {
+      "site_id": "cafe-nile",
+      "business_name": "Nile Corner Café",
+      "business_type": "cafe",
+      "wifi_ssids": ["NileCorner_WiFi"],
+      "known_access_points": [
+        {"bssid": "A4:2B:B0:11:22:33", "label": "Main router"},
+        {"bssid": "A4:2B:B0:11:22:34", "label": "Seating-area extender"}
+      ],
+      "router_model": "TP-Link Archer C6",
+      "primary_language": "en",
+      "notes": "Open 8am to midnight. Card payments run over the WiFi.",
+      "sensors": [
+        {"sensor_id": "cafe-s1", "name": "Front counter", "location": "Next to the cash register", "channels": [1, 6, 11], "status": "online", "last_seen_seconds_ago": 2},
+        {"sensor_id": "cafe-s2", "name": "Seating area", "location": "Middle of the main room", "channels": [1, 6, 11], "status": "online", "last_seen_seconds_ago": 3},
+        {"sensor_id": "cafe-s3", "name": "Back office", "location": "Storage room, rear of the shop", "channels": [1, 6, 11], "status": "offline", "last_seen_seconds_ago": 10800}
+      ]
+    },
+    {
+      "site_id": "clinic-noor",
+      "business_name": "Al Noor Clinic",
+      "business_type": "clinic",
+      "wifi_ssids": ["AlNoor_Clinic"],
+      "known_access_points": [
+        {"bssid": "F0:9F:C2:AA:10:01", "label": "Reception router"}
+      ],
+      "router_model": "Huawei HG8145V5",
+      "primary_language": "ar",
+      "notes": "العيادة تعمل من 9 صباحًا حتى 9 مساءً.",
+      "sensors": [
+        {"sensor_id": "clinic-s1", "name": "Reception", "location": "Reception desk", "channels": [1, 6, 11], "status": "online", "last_seen_seconds_ago": 1},
+        {"sensor_id": "clinic-s2", "name": "Waiting room", "location": "Waiting room, first floor", "channels": [1, 6, 11], "status": "online", "last_seen_seconds_ago": 2}
+      ]
+    },
+    {
+      "site_id": "hotel-sphinx",
+      "business_name": "Sphinx Boutique Hotel",
+      "business_type": "hotel",
+      "wifi_ssids": ["SphinxGuest", "SphinxStaff"],
+      "known_access_points": [
+        {"bssid": "B8:27:EB:00:AA:01", "label": "Lobby access point"},
+        {"bssid": "B8:27:EB:00:AA:02", "label": "Floor 2 access point"}
+      ],
+      "router_model": "Ubiquiti UniFi 6 Lite",
+      "primary_language": "en",
+      "notes": "Guest WiFi covers all rooms. Staff WiFi is separate.",
+      "sensors": [
+        {"sensor_id": "hotel-s1", "name": "Lobby", "location": "Lobby, front desk", "channels": [1, 6, 11], "status": "online", "last_seen_seconds_ago": 1}
+      ]
+    }
+  ],
+
+  "events": [
+    {"event_id": "evt-cafe-01", "event_type": "deauth_flood", "minutes_ago": 1510, "severity": 5, "confidence": 0.82, "sensor_ids": ["cafe-s1"], "details": {"src_mac": "DE:AD:BE:EF:00:01", "rate_per_sec": 38, "window_s": 30, "count": 34}, "incident_ref": "cafe-deauth-old"},
+    {"event_id": "evt-cafe-02", "event_type": "deauth_flood", "minutes_ago": 1506, "severity": 6, "confidence": 0.86, "sensor_ids": ["cafe-s1", "cafe-s2"], "details": {"src_mac": "DE:AD:BE:EF:00:01", "rate_per_sec": 47, "window_s": 30, "count": 41}, "incident_ref": "cafe-deauth-old"},
+    {"event_id": "evt-cafe-03", "event_type": "deauth_flood", "minutes_ago": 1502, "severity": 6, "confidence": 0.88, "sensor_ids": ["cafe-s1"], "details": {"src_mac": "de:ad:be:ef:00:01", "rate_per_sec": 52, "window_s": 30, "count": 45}, "incident_ref": "cafe-deauth-old"},
+    {"event_id": "evt-cafe-04", "event_type": "rogue_ap", "minutes_ago": 4300, "severity": 4, "confidence": 0.6, "sensor_ids": ["cafe-s2"], "details": {"bssid": "00:11:22:33:44:55", "ssid": "FreeWiFi_Promo", "rssi": -62}, "incident_ref": "cafe-rogue-old"},
+    {"event_id": "evt-cafe-05", "event_type": "evil_twin", "minutes_ago": 6, "severity": 8, "confidence": 0.91, "sensor_ids": ["cafe-s1", "cafe-s2"], "details": {"ssid": "NileCorner_WiFi", "known_bssid": "A4:2B:B0:11:22:33", "rogue_bssid": "66:77:88:99:AA:BB"}, "incident_ref": "cafe-twin-live"},
+    {"event_id": "evt-cafe-06", "event_type": "evil_twin", "minutes_ago": 4, "severity": 9, "confidence": 0.93, "sensor_ids": ["cafe-s1", "cafe-s2"], "details": {"ssid": "NileCorner_WiFi", "known_bssid": "A4:2B:B0:11:22:33", "rogue_bssid": "66:77:88:99:AA:BB"}, "incident_ref": "cafe-twin-live"},
+    {"event_id": "evt-cafe-07", "event_type": "evil_twin", "minutes_ago": 2, "severity": 9, "confidence": 0.95, "sensor_ids": ["cafe-s1", "cafe-s2"], "details": {"ssid": "NileCorner_WiFi", "known_bssid": "A4:2B:B0:11:22:33", "rogue_bssid": "66:77:88:99:AA:BB"}, "incident_ref": "cafe-twin-live"},
+
+    {"event_id": "evt-clinic-01", "event_type": "anomaly", "minutes_ago": 300, "severity": 2, "confidence": 0.4, "sensor_ids": ["clinic-s1"], "details": {"metric": "probe_rate", "value": 38, "baseline": 9}, "incident_ref": "clinic-anomaly"},
+    {"event_id": "evt-clinic-02", "event_type": "rogue_ap", "minutes_ago": 7, "severity": 3, "confidence": 0.55, "sensor_ids": ["clinic-s2"], "details": {"bssid": "3C:84:6A:5D:10:E2", "ssid": "DIRECT-Printer-1F", "rssi": -58}, "incident_ref": "clinic-rogue-live"},
+    {"event_id": "evt-clinic-03", "event_type": "rogue_ap", "minutes_ago": 5, "severity": 3, "confidence": 0.6, "sensor_ids": ["clinic-s2"], "details": {"bssid": "3C:84:6A:5D:10:E2", "ssid": "DIRECT-Printer-1F", "rssi": -57}, "incident_ref": "clinic-rogue-live"},
+
+    {"event_id": "evt-hotel-01", "event_type": "deauth_flood", "minutes_ago": 600, "severity": 6, "confidence": 0.7, "sensor_ids": ["hotel-s1"], "details": {"rate_per_sec": 45, "window_s": 30}, "incident_ref": "hotel-deauth-nokey"},
+    {"event_id": "evt-hotel-02", "event_type": "evil_twin", "minutes_ago": 3000, "severity": 9, "confidence": 0.94, "sensor_ids": ["hotel-s1"], "details": {"ssid": "SphinxGuest", "known_bssid": "B8:27:EB:00:AA:01", "rogue_bssid": "5E:CF:7F:12:34:56"}, "incident_ref": "hotel-twin-old"},
+    {"event_id": "evt-hotel-03", "event_type": "evil_twin", "minutes_ago": 2995, "severity": 9, "confidence": 0.96, "sensor_ids": ["hotel-s1"], "details": {"ssid": "SphinxGuest", "known_bssid": "B8:27:EB:00:AA:01", "rogue_bssid": "5E:CF:7F:12:34:56"}, "incident_ref": "hotel-twin-old"},
+    {"event_id": "evt-hotel-04", "event_type": "deauth_flood", "minutes_ago": 6, "severity": 6, "confidence": 0.8, "sensor_ids": ["hotel-s1"], "details": {"src_mac": "C0:FF:EE:12:34:56", "rate_per_sec": 48, "window_s": 30, "count": 40}, "incident_ref": "hotel-deauth-live"},
+    {"event_id": "evt-hotel-05", "event_type": "deauth_flood", "minutes_ago": 5, "severity": 6, "confidence": 0.82, "sensor_ids": ["hotel-s1"], "details": {"src_mac": "C0:FF:EE:12:34:56", "rate_per_sec": 52, "window_s": 30, "count": 44}, "incident_ref": "hotel-deauth-live"},
+    {"event_id": "evt-hotel-06", "event_type": "deauth_flood", "minutes_ago": 4, "severity": 7, "confidence": 0.85, "sensor_ids": ["hotel-s1"], "details": {"src_mac": "C0:FF:EE:12:34:56", "rate_per_sec": 60, "window_s": 30, "count": 50}, "incident_ref": "hotel-deauth-live"},
+    {"event_id": "evt-hotel-07", "event_type": "deauth_flood", "minutes_ago": 3, "severity": 7, "confidence": 0.88, "sensor_ids": ["hotel-s1"], "details": {"src_mac": "C0:FF:EE:12:34:56", "rate_per_sec": 63, "window_s": 30, "count": 55}, "incident_ref": "hotel-deauth-live"},
+    {"event_id": "evt-hotel-08", "event_type": "deauth_flood", "minutes_ago": 2, "severity": 7, "confidence": 0.9, "sensor_ids": ["hotel-s1"], "details": {"src_mac": "C0:FF:EE:12:34:56", "rate_per_sec": 70, "window_s": 30, "count": 62}, "incident_ref": "hotel-deauth-live"}
+
+  ],
+
+  "alerts": [
+    {"alert_id": "alr-cafe-01", "event_id": "evt-cafe-01", "severity": 5, "status": "resolved", "lang": "en", "provider": "template", "explains_incident": true, "reused_from": null,
+     "title": "Someone is trying to knock customers off your WiFi",
+     "explanation": "A nearby device is repeatedly disconnecting people from your WiFi. This is sometimes done to push customers onto a fake copy of your network. It is worth a quick look today.",
+     "recommended_action": "Ask staff whether customers are reporting disconnections."},
+    {"alert_id": "alr-cafe-02", "event_id": "evt-cafe-02", "severity": 6, "status": "resolved", "lang": "en", "provider": "reused", "explains_incident": false, "reused_from": "alr-cafe-01",
+     "title": "Someone is trying to knock customers off your WiFi",
+     "explanation": "A nearby device is repeatedly disconnecting people from your WiFi. This is sometimes done to push customers onto a fake copy of your network. It is worth a quick look today.",
+     "recommended_action": "Ask staff whether customers are reporting disconnections."},
+    {"alert_id": "alr-cafe-03", "event_id": "evt-cafe-03", "severity": 6, "status": "resolved", "lang": "en", "provider": "reused", "explains_incident": false, "reused_from": "alr-cafe-01",
+     "title": "Someone is trying to knock customers off your WiFi",
+     "explanation": "A nearby device is repeatedly disconnecting people from your WiFi. This is sometimes done to push customers onto a fake copy of your network. It is worth a quick look today.",
+     "recommended_action": "Ask staff whether customers are reporting disconnections."},
+    {"alert_id": "alr-cafe-04", "event_id": "evt-cafe-04", "severity": 4, "status": "acknowledged", "lang": "en", "provider": "template", "explains_incident": true, "reused_from": null,
+     "title": "An unknown wireless network appeared nearby",
+     "explanation": "We spotted a WiFi network near your shop that we don't recognize. It is often just a neighbor's device, but it is worth checking. Nothing needs to change on your WiFi right now.",
+     "recommended_action": "Ask staff if anyone has set up a new hotspot or device nearby."},
+    {"alert_id": "alr-cafe-05", "event_id": "evt-cafe-05", "severity": 8, "status": "new", "lang": "en", "provider": "llm", "explains_incident": true, "reused_from": null,
+     "title": "A copy of your WiFi network has appeared",
+     "explanation": "Someone near your front counter is broadcasting a network with the same name as yours, 'NileCorner_WiFi'. Customers who connect to it could have their information stolen. This needs your attention right now.",
+     "recommended_action": "Ask staff to remind customers to only connect to the WiFi name printed at the counter."},
+    {"alert_id": "alr-cafe-06", "event_id": "evt-cafe-06", "severity": 9, "status": "new", "lang": "en", "provider": "reused", "explains_incident": false, "reused_from": "alr-cafe-05",
+     "title": "A copy of your WiFi network has appeared",
+     "explanation": "Someone near your front counter is broadcasting a network with the same name as yours, 'NileCorner_WiFi'. Customers who connect to it could have their information stolen. This needs your attention right now.",
+     "recommended_action": "Ask staff to remind customers to only connect to the WiFi name printed at the counter."},
+    {"alert_id": "alr-cafe-07", "event_id": "evt-cafe-07", "severity": 9, "status": "new", "lang": "en", "provider": "reused", "explains_incident": false, "reused_from": "alr-cafe-05",
+     "title": "A copy of your WiFi network has appeared",
+     "explanation": "Someone near your front counter is broadcasting a network with the same name as yours, 'NileCorner_WiFi'. Customers who connect to it could have their information stolen. This needs your attention right now.",
+     "recommended_action": "Ask staff to remind customers to only connect to the WiFi name printed at the counter."},
+
+    {"alert_id": "alr-clinic-01", "event_id": "evt-clinic-01", "severity": 2, "status": "resolved", "lang": "ar", "provider": "template", "explains_incident": true, "reused_from": null,
+     "title": "نشاط غير معتاد على شبكة الواي فاي",
+     "explanation": "لاحظنا نشاطًا غير معتاد قرب مكتب الاستقبال. لا يبدو خطيرًا حتى الآن. سنواصل المراقبة.",
+     "recommended_action": "لا يلزمك أي إجراء الآن، وأبلغنا إذا لاحظت بطئًا في الإنترنت."},
+    {"alert_id": "alr-clinic-02", "event_id": "evt-clinic-02", "severity": 3, "status": "new", "lang": "ar", "provider": "llm", "explains_incident": true, "reused_from": null,
+     "title": "ظهرت شبكة لاسلكية غير معروفة بالقرب منكم",
+     "explanation": "رصدنا شبكة واي فاي لا نعرفها قرب غرفة الانتظار. غالبًا تكون جهازًا قريبًا مثل طابعة، لكن من الأفضل التأكد. الخطورة منخفضة حاليًا.",
+     "recommended_action": "اسأل موظفي الاستقبال إن كانت هناك طابعة أو جهاز جديد تم تشغيله مؤخرًا."},
+    {"alert_id": "alr-clinic-03", "event_id": "evt-clinic-03", "severity": 3, "status": "new", "lang": "ar", "provider": "reused", "explains_incident": false, "reused_from": "alr-clinic-02",
+     "title": "ظهرت شبكة لاسلكية غير معروفة بالقرب منكم",
+     "explanation": "رصدنا شبكة واي فاي لا نعرفها قرب غرفة الانتظار. غالبًا تكون جهازًا قريبًا مثل طابعة، لكن من الأفضل التأكد. الخطورة منخفضة حاليًا.",
+     "recommended_action": "اسأل موظفي الاستقبال إن كانت هناك طابعة أو جهاز جديد تم تشغيله مؤخرًا."},
+
+    {"alert_id": "alr-hotel-01", "event_id": "evt-hotel-01", "severity": 6, "status": "resolved", "lang": "en", "provider": "template", "explains_incident": true, "reused_from": null,
+     "title": "Someone is trying to knock customers off your WiFi",
+     "explanation": "A nearby device is repeatedly disconnecting people from your WiFi. This is sometimes done to push customers onto a fake copy of your network. It is worth a quick look today.",
+     "recommended_action": "Ask staff whether customers are reporting disconnections."},
+    {"alert_id": "alr-hotel-02", "event_id": "evt-hotel-02", "severity": 9, "status": "resolved", "lang": "en", "provider": "template", "explains_incident": true, "reused_from": null,
+     "title": "A copy of your WiFi network has appeared",
+     "explanation": "Someone nearby is broadcasting a WiFi network with the same name as yours. Customers who connect to it could have their information stolen. This needs your attention right now.",
+     "recommended_action": "Ask staff to remind customers to only connect to the WiFi name printed at the counter."},
+    {"alert_id": "alr-hotel-03", "event_id": "evt-hotel-03", "severity": 9, "status": "resolved", "lang": "en", "provider": "reused", "explains_incident": false, "reused_from": "alr-hotel-02",
+     "title": "A copy of your WiFi network has appeared",
+     "explanation": "Someone nearby is broadcasting a WiFi network with the same name as yours. Customers who connect to it could have their information stolen. This needs your attention right now.",
+     "recommended_action": "Ask staff to remind customers to only connect to the WiFi name printed at the counter."},
+    {"alert_id": "alr-hotel-04", "event_id": "evt-hotel-04", "severity": 6, "status": "acknowledged", "lang": "en", "provider": "llm", "explains_incident": true, "reused_from": null,
+     "title": "Guests are being knocked off your WiFi",
+     "explanation": "A device near the lobby has started repeatedly disconnecting guests from your WiFi. This is sometimes done to push people onto a fake copy of your network. It needs your attention today.",
+     "recommended_action": "Ask reception whether guests are reporting dropped connections."},
+    {"alert_id": "alr-hotel-05", "event_id": "evt-hotel-05", "severity": 6, "status": "new", "lang": "en", "provider": "reused", "explains_incident": false, "reused_from": "alr-hotel-04",
+     "title": "Guests are being knocked off your WiFi",
+     "explanation": "A device near the lobby has started repeatedly disconnecting guests from your WiFi. This is sometimes done to push people onto a fake copy of your network. It needs your attention today.",
+     "recommended_action": "Ask reception whether guests are reporting dropped connections."},
+    {"alert_id": "alr-hotel-06", "event_id": "evt-hotel-06", "severity": 7, "status": "new", "lang": "en", "provider": "reused", "explains_incident": false, "reused_from": "alr-hotel-04",
+     "title": "Guests are being knocked off your WiFi",
+     "explanation": "A device near the lobby has started repeatedly disconnecting guests from your WiFi. This is sometimes done to push people onto a fake copy of your network. It needs your attention today.",
+     "recommended_action": "Ask reception whether guests are reporting dropped connections."},
+    {"alert_id": "alr-hotel-07", "event_id": "evt-hotel-07", "severity": 7, "status": "new", "lang": "en", "provider": "reused", "explains_incident": false, "reused_from": "alr-hotel-04",
+     "title": "Guests are being knocked off your WiFi",
+     "explanation": "A device near the lobby has started repeatedly disconnecting guests from your WiFi. This is sometimes done to push people onto a fake copy of your network. It needs your attention today.",
+     "recommended_action": "Ask reception whether guests are reporting dropped connections."},
+    {"alert_id": "alr-hotel-08", "event_id": "evt-hotel-08", "severity": 7, "status": "new", "lang": "en", "provider": "reused", "explains_incident": false, "reused_from": "alr-hotel-04",
+     "title": "Guests are being knocked off your WiFi",
+     "explanation": "A device near the lobby has started repeatedly disconnecting guests from your WiFi. This is sometimes done to push people onto a fake copy of your network. It needs your attention today.",
+     "recommended_action": "Ask reception whether guests are reporting dropped connections."}
+  ]
+}

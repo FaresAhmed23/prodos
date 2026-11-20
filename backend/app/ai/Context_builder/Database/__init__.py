@@ -1,3 +1,3 @@
-from database.core import Database, get_database, reset_database
+from app.ai.Context_builder.database.core import Database, get_database, reset_database
 
 __all__ = ["Database", "get_database", "reset_database"]
