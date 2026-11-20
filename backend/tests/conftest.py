@@ -36,6 +36,10 @@ import sys  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# Script-style harnesses under tests/ have no test functions and run database
+# side effects at import. Keep them out of collection without deleting them.
+collect_ignore = ["checker_tester", "context_builder_tester"]
+
 from app.database import Base, get_db  # noqa: E402
 from app.routers import alerts as alerts_router  # noqa: E402
 from app.routers import events as events_router  # noqa: E402

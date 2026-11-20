@@ -152,6 +152,24 @@ def test_fallback_is_logged_as_the_template(alerts_on_test_db, session, monkeypa
     assert rows[0].prompt is None, "a fallback explanation has no LLM prompt to record"
 
 
+def test_alert_is_persisted_with_template_text(alerts_on_test_db, session, monkeypatch):
+    """The metadata columns (lang, site_id) must never block an alert insert."""
+    alerts = alerts_on_test_db
+    monkeypatch.setattr(alerts, "provider", TemplateProvider())
+
+    alert = asyncio.run(alerts.handle_detection_event(make_event()))
+    assert alert is not None
+
+    stored = session.get(Alert, alert.alert_id)
+    assert stored is not None
+    assert stored.title.startswith("Someone is trying")
+    assert stored.lang == "en"
+
+    log = session.query(ExplanationLog).one()
+    assert log.lang == "en"
+    assert log.site_id is None
+
+
 def test_successful_llm_call_is_logged_as_llm_with_its_prompt(alerts_on_test_db, session, monkeypatch, stub_llm):
     alerts = alerts_on_test_db
     monkeypatch.setattr(

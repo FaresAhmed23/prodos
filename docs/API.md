@@ -226,4 +226,5 @@ MAC addresses arrive normalised as `AA:BB:CC:DD:EE:FF` (upper-case, colon-separa
 - **No alerts/stats by severity over time** — no chart endpoint yet.
 - `frames/recent` takes `seconds` and `limit` but is **not** cursor-paginated; it is bounded by the
   7-day retention sweep.
-- QoS on `prodos/events` is still being finalised (PRO-16). It does not change any payload shape.
+- QoS 1 is implemented end-to-end on `prodos/events` (PRO-16 closed). It does not change any
+  payload shape.

@@ -16,10 +16,7 @@ import httpx
 
 from ..schemas import DetectionEvent
 from .explanation import Explanation
-
-from prompt import build_prompt, get_system_prompt
-
-from app.ai.event_prompt_builder import promptBuilder
+from .prompt import build_prompt, get_system_prompt
 
 log = logging.getLogger(__name__)
 

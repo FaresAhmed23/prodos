@@ -78,10 +78,9 @@ card fills; the frame table is by far the largest.
   against `MQTT_HOST=<pilot host>`. Until it ships an image, a pilot host runs
   four processes, not three, and compose is not the whole system. Adding it is a
   few lines once a Dockerfile exists.
-- **QoS 1 is inert end-to-end (PRO-16).** The backend already subscribes
-  `prodos/events` at QoS 1 and Mosquitto now persists sessions, but
-  `detection/main.py` still publishes at QoS 0, so no redelivery happens yet.
-  That file is Omar's and Zaki's.
+- **QoS 1 is implemented end-to-end (PRO-16 closed).** The backend subscribes
+  `prodos/events` at QoS 1 and `detection/main.py` publishes at QoS 1. QoS 1
+  redelivery survives a broker restart because Mosquitto persists sessions.
 - **Mosquitto allows anonymous connections.** The ESP32 firmware has nowhere to
   store a credential, so the broker trusts the local network. Do not expose the
   pilot host to the internet. See the comment in `mosquitto.prod.conf`.

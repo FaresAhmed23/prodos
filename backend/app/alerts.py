@@ -51,6 +51,7 @@ def _store(
     explanation: Explanation,
     provider_used: str,
     prompt: str | None,
+    lang: str,
 ) -> Alert | None:
     with SessionLocal() as session:
         if session.get(Event, event.event_id) is not None:
@@ -78,6 +79,7 @@ def _store(
             explanation=explanation.explanation,
             recommended_action=explanation.recommended_action,
             status="new",
+            lang=lang,
         )
         session.add(alert)
         # Same transaction as the alert, and only on the path that actually
@@ -92,6 +94,7 @@ def _store(
                     "explanation": explanation.explanation,
                     "recommended_action": explanation.recommended_action,
                 },
+                lang=lang,
             )
         )
         session.commit()
@@ -106,6 +109,9 @@ async def handle_detection_event(event: DetectionEvent) -> Alert | None:
     offline template.
     """
     prompt = provider.build_prompt(event) if isinstance(provider, LLMProvider) else None
+    # Recorded on the alert + log rows. "en" is the template's default, so a
+    # metadata field can never block the alert insert either way.
+    lang = getattr(provider, "_lang", None) or "en"
     try:
         explanation = await provider.explain(event)
         provider_used = getattr(provider, "name", "template")
@@ -118,4 +124,5 @@ async def handle_detection_event(event: DetectionEvent) -> Alert | None:
         explanation = await TemplateProvider().explain(event)
         provider_used = "template"
         prompt = None
-    return await asyncio.to_thread(_store, event, explanation, provider_used, prompt)
+        lang = "en"
+    return await asyncio.to_thread(_store, event, explanation, provider_used, prompt, lang)

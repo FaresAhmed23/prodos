@@ -21,7 +21,7 @@ from app.database import Base
 import app.models  # noqa: F401  -- registers the tables
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-TABLES = {"frames", "events", "alerts", "explanation_logs", "sensors"}
+TABLES = {"frames", "events", "alerts", "explanation_logs", "sensors", "site_profile", "incidents"}
 
 
 def alembic_config() -> Config:
@@ -119,6 +119,8 @@ def test_every_index_is_created(migrated):
         "alerts": {"ix_alerts_event_id", "ix_alerts_created_at", "ix_alerts_status"},
         "explanation_logs": {"ix_explanation_logs_provider_used", "ix_explanation_logs_created_at"},
         "sensors": {"ix_sensors_status"},
+        "site_profile": set(),
+        "incidents": {"ix_incidents_site_key_last"},
     }
     for table, names in expected.items():
         got = {i["name"] for i in insp.get_indexes(table)}
@@ -149,17 +151,19 @@ def test_upgrade_is_idempotent(migrated):
 # --- the migration chain itself --------------------------------------------
 
 
-def test_exactly_one_revision_and_it_is_the_head():
+def test_exactly_one_head():
     scripts = ScriptDirectory.from_config(alembic_config())
     heads = scripts.get_heads()
     assert len(heads) == 1, f"expected a single head, got {heads}"
-    assert len(list(scripts.walk_revisions())) == 1
 
 
-def test_initial_revision_has_no_parent():
-    """It must be the base revision: the pilot databases predate Alembic."""
+def test_base_revision_has_no_parent():
+    """It must be the base revision: the pilot databases predate Alembic.
+
+    `walk_revisions()` yields head first, so the base is the last one.
+    """
     scripts = ScriptDirectory.from_config(alembic_config())
-    revision = list(scripts.walk_revisions())[0]
+    revision = list(scripts.walk_revisions())[-1]
     assert revision.down_revision is None
 
 

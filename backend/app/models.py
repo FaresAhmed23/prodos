@@ -81,8 +81,10 @@ class ExplanationLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
     # Edit: new columns to better specifiy an Explanation log
-    lang: Mapped[str] = mapped_column(String(8))
-    site_id: Mapped[str] = mapped_column(String(64), ForeignKey("site_profile.site_id"))
+    lang: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    site_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("site_profile.site_id"), nullable=True
+    )
 
     # Edit: new columns for performance measurement
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=True)

@@ -113,20 +113,17 @@ Canonical source: `backend/app/schemas.py`. Duplicate here for reference.
 Three things about MQTT QoS that decide whether the table above is even achievable:
 
 - **Delivery QoS is `min(publish QoS, granted subscribe QoS)`.** A SUBSCRIBE can only *lower*
-  delivery, never raise it. So the backend subscribing to `prodos/events` at QoS 1 does not by
-  itself guarantee QoS 1 delivery.
-- **Events still arrive at QoS 0 today (PRO-16).** `detection/main.py` publishes at the aiomqtt
-  default of QoS 0. The backend's half is done and the table above states the target, but the
-  detection half is open: until Omar/Zaki publish at QoS 1, every `DetectionEvent` is still
-  best-effort. See §6 for what was verified on each side separately.
+  delivery, never raise it. Both sides now ask for QoS 1 on `prodos/events`
+  (`backend/app/mqtt.py` `events_ingest_loop`, `detection/main.py`), so the table above is real.
+- **QoS 1 is implemented end-to-end (PRO-16 closed).** `detection/main.py` publishes at `qos=1`
+  and the backend subscribes at `qos=1`; duplicates are absorbed by the `event_id` dedup.
 - **The frames side is deliberately asymmetric in intent, not in accident.** QoS 0 on a
   200 msg/sec topic is a design decision about backpressure, not an oversight — QoS 1 there would
   trade a bounded queue for unbounded disk growth on a Raspberry Pi.
 
 **This is transport-level only. It is not part of `schemas.py`**, so it does **not** require a
 `detection/schemas.py` re-sync — QoS is a property of the publish and subscribe calls, not of the
-payload. Nothing here is a CONTRACT CHANGE. The QoS 1 values become real behaviour only when the
-detection engine publishes at QoS 1.
+payload. Nothing here is a CONTRACT CHANGE.
 
 ### FrameBatch / WiFiFrame (sensor → backend)
 
@@ -218,8 +215,8 @@ prodos/
 │   ├── alembic.ini               # F-9. NO sqlalchemy.url on purpose: env.py takes the URL from app.config.settings
 │   ├── migrations/               # F-9. env.py (UTC pin + compare_type + render_as_batch) + versions/*.py
 │   ├── tests/                    # F-6 suite: conftest (in-memory SQLite, bare-app client, loopback LLM stub)
-│   │                             #   + test_schemas / test_frames / test_alerts / test_explanation. 99 checks, no broker.
-│   │                             # F-9 adds test_migrations.py (11 checks): the migration must match the models.
+│   │                             #   + test_schemas / test_frames / test_alerts / test_explanation / test_migrations.
+│   │                             #   checker_tester/ and context_builder_tester/ are script harnesses, not collected.
 │   ├── run.py                    # Windows-safe uvicorn entrypoint (selector event loop) — use this
 │   └── app/
 │       ├── __init__.py
@@ -227,13 +224,17 @@ prodos/
 │       ├── config.py             # Settings: database_url, mqtt_host/port, mqtt_topic_frames, mqtt_topic_events, llm_api_base/model/key/timeout
 │       ├── schemas.py            # contracts above (WiFiFrame, FrameBatch, DetectionEvent, Alert, EventOut, AlertUpdate)
 │       ├── database.py           # engine + SessionLocal (pins the Postgres session to UTC)
-│       ├── models.py             # Frame, Event, Alert, Sensor, ExplanationLog SQLAlchemy tables
+│       ├── models.py             # Frame, Event, Alert, Sensor, ExplanationLog, SiteProfile, Incident
 │       ├── mqtt.py               # mqtt_ingest_loop() + events_ingest_loop() + Broadcaster fan-out
 │       ├── alerts.py             # DetectionEvent -> stored Event -> generated Alert + explanation_logs row
 │       ├── ai/                   # co-owned with Mohamed Ahmed — explanation layer
 │       │   ├── explanation.py    # Explanation dataclass + ExplanationProvider protocol
 │       │   ├── template_provider.py  # offline, deterministic, jargon-free (the floor)
-│       │   └── llm_provider.py   # any OpenAI-compatible endpoint (base URL + model + key from env); raises, never falls back itself
+│       │   ├── llm_provider.py   # any OpenAI-compatible endpoint (base URL + model + key from env); raises, never falls back itself
+│       │   ├── prompt.py         # prompt loading + user-prompt builder (prompts/prompts.json)
+│       │   ├── Reply_checker/    # reply validation rules (not yet wired into alerts.py)
+│       │   ├── Context_builder/  # site/incident context for prompts (not yet wired into alerts.py)
+│       │   └── event_prompt_builder/  # system prompts + event/context extraction
 │       ├── pagination.py        # keyset cursor paging shared by /alerts and /events
 │       └── routers/              # frames.py, sensors.py, events.py, alerts.py
 ├── docs/API.md                  # frontend-facing guide for Arsany (F-8)
@@ -380,22 +381,12 @@ Note this is set as a libpq connect option on purpose. An
 `SHOW timezone` check taken inside the hook — and is then silently undone, because psycopg opens an
 implicit transaction for the statement and the pool's rollback-on-return reverts it.
 
-**QoS: the backend half is done, the detection half is still open (PRO-16).** `fake_sensor.py`
-publishes frames at `qos=0` and `detection/main.py` publishes `prodos/events` at the aiomqtt
-default of QoS 0. The backend now subscribes `prodos/events` at `qos=1` (`mqtt.py`,
-`events_ingest_loop`) while deliberately leaving the frame subscription at QoS 0 — ~200 frames/sec
-per sensor is high-rate best-effort, a lost batch is tolerable, and QoS 1 would make the broker
-queue against a slow consumer. A lost `DetectionEvent` is a silently dropped security alert, so it
-is worth the retry.
-
-**This is still inert end-to-end, and that is not a bug in the change.** MQTT delivers at
-`min(publish QoS, granted QoS)` and a SUBSCRIBE can only lower delivery, never raise it, so a q1
-subscription over a q0 publisher still arrives at q0. Verified both halves separately: the backend's
-SUBSCRIBE is granted at QoS 1 (`Mosquitto -v` prints `prodos/events (QoS 1)`), and a probe
-publishing at q1 is forwarded to the backend at `q1` and produces an alert. The moment
-`detection/main.py` publishes at QoS 1, delivery is guaranteed with no further backend work. That
-file belongs to Zaki and Omar, so it is left alone and raised as PRO-16. §5 should pin the intended
-QoS per topic either way.
+**QoS 1 is implemented end-to-end (PRO-16 closed).** `detection/main.py` publishes `prodos/events`
+at `qos=1`; the backend subscribes at `qos=1` (`mqtt.py`, `events_ingest_loop`) and deliberately
+leaves the frame subscription at QoS 0 — ~200 frames/sec per sensor is high-rate best-effort, a lost
+batch is tolerable, and QoS 1 would make the broker queue against a slow consumer. A lost
+`DetectionEvent` is a silently dropped security alert, so it is worth the retry. The broker persists
+sessions (`mosquitto.prod.conf`) so redelivery survives a restart.
 
 ### Running the smoke test: it needs the broker to itself
 
@@ -530,10 +521,11 @@ cd backend
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-99 checks, ~5s. `pytest.ini` sets `pythonpath = .` and `-p no:cacheprovider` so the run needs no
-`PYTHONPATH` and leaves no cache in the repo.
+Run it and use its own pass count; it changes as tests are added. `pytest.ini` sets
+`pythonpath = .` and `-p no:cacheprovider` so the run needs no `PYTHONPATH` and leaves no cache in
+the repo.
 
-Met: 99/99 green. **Hermetic by construction, and verified that way** — the run was repeated with
+Met: green. **Hermetic by construction, and verified that way** — the run was repeated with
 every `python` process killed and nothing listening on 1883, with `DATABASE_URL` and all `LLM_*`
 unset. No test imports `aiomqtt` or names a broker, which `Select-String` over `backend/tests/`
 confirms mechanically.
@@ -597,14 +589,13 @@ both a host-local run and the compose network: `env_file` loads it, then `enviro
 `DATABASE_URL` and `MQTT_HOST` with the service names `db` and `mosquitto`. Without that override
 the container would inherit `DATABASE_URL=...@localhost:5432` from `.env` and talk to itself.
 
-**Mosquitto persistence exists because of PRO-16, and it is not yet load-bearing.** QoS 1
-redelivery survives a broker restart only if sessions persist, so `mosquitto.prod.conf` sets
+**Mosquitto persistence is load-bearing for QoS 1.** QoS 1 redelivery survives a broker restart
+only if sessions persist, so `mosquitto.prod.conf` sets
 `persistence true`, `persistence_location /mosquitto/data/`, and `autosave_interval 300` — every 5
 minutes rather than on every write, because the pilot host may be a Pi with an SD card and the
 default save-on-change wears it out. It also bounds the queue (`max_queued_messages 10000`) and
 drops queued QoS 0 messages (`queue_qos0_messages false`), since a queued beacon from a minute ago
-is not evidence of anything. Until the detection engine publishes at QoS 1 this changes nothing
-observable; it is pre-building for PRO-16 so the flip is one line on their side.
+is not evidence of anything.
 
 The dev and pilot broker configs are separate files on purpose. `allow_anonymous true` has to stay
 for local work because the ESP32 firmware has nowhere to store a credential, but that should not be
@@ -634,7 +625,7 @@ reboot.
 - **The detection engine is not in the compose file.** `detection/` has no Dockerfile and is owned
   by Zaki and Omar, so it runs as a separate process against `MQTT_HOST`. A pilot host is four
   processes, not three. Adding it is a few lines once an image exists.
-- **QoS 1 inert end-to-end** — PRO-16, theirs to publish.
+- **QoS 1 is implemented end-to-end** on `prodos/events` (PRO-16 closed).
 - **No auth or TLS on the API or broker.** Not viable beyond a trusted LAN.
 - **No backup.** `pgdata` is a plain named volume. `alerts` and `explanation_logs` are the
   irreplaceable part; a nightly `pg_dump` is the obvious next step.
@@ -759,9 +750,9 @@ Note for the container: the Dockerfile now copies `alembic.ini` and `migrations/
 copied only `app/`, so the image had no migration assets and would have failed on boot with
 "No 'script_location' key".
 
-Regression: `smoke_test.py` 25/25 on SQLite and on PostgreSQL 16.10 — and the Postgres run left
+Regression: `smoke_test.py` green on SQLite and on PostgreSQL 16.10 — and the Postgres run left
 `alembic_version = bfd1100cc262`, which is the proof the migration really ran in the app path and
-not just in a test. Full suite 110 passed.
+not just in a test.
 
 No CONTRACT CHANGE: no model, column or type changed. This revision reproduces the existing schema
 exactly, which is the point — existing pilot databases stamp `bfd1100cc262` as their base.
@@ -775,6 +766,18 @@ exactly, which is the point — existing pilot databases stamp `bfd1100cc262` as
 ```
 
 Never edit a revision that has already run somewhere other than a scratch database.
+
+### F-19 · Sites, sensor assignment, checklist — spec ready - NOT STARTED
+
+Spec: `docs/plans/shieldscore.md`.
+
+### F-20 · ShieldScore engine, snapshots, score endpoints — spec ready - NOT STARTED
+
+Spec: `docs/plans/shieldscore.md`.
+
+### F-21 · Trust — spec ready - NOT STARTED
+
+Spec: `docs/plans/trust.md`.
 
 ### F-10 · v2 roadmap — the "10/10" plan (do NOT start until M0–M4 are complete)
 
