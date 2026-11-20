@@ -37,7 +37,9 @@ from app.database import Base  # noqa: E402
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # fileConfig defaults to disable_existing_loggers=True, which silences
+    # every app.* logger when the lifespan runs migrations after import.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

@@ -28,7 +28,7 @@ from sqlalchemy.pool import StaticPool
 
 # Must happen before app.config is imported: a developer with LLM_API_KEY exported
 # in their shell would otherwise get LLMProvider in tests that assume the floor.
-for _var in ("LLM_API_KEY", "LLM_API_BASE", "LLM_MODEL"):
+for _var in ("LLM_API_KEY", "LLM_API_BASE", "LLM_MODEL", "ADMIN_API_KEY"):
     os.environ.pop(_var, None)
 os.environ["DATABASE_URL"] = "sqlite://"  # nothing should ever connect to this
 
@@ -45,6 +45,7 @@ from app.routers import alerts as alerts_router  # noqa: E402
 from app.routers import events as events_router  # noqa: E402
 from app.routers import frames as frames_router  # noqa: E402
 from app.routers import sensors as sensors_router  # noqa: E402
+from app.routers import sites as sites_router  # noqa: E402
 
 
 @pytest.fixture
@@ -75,7 +76,7 @@ def session(session_factory):
 @pytest.fixture
 def client(session):
     app = FastAPI()
-    for module in (frames_router, sensors_router, events_router, alerts_router):
+    for module in (frames_router, sensors_router, events_router, alerts_router, sites_router):
         app.include_router(module.router)
 
     def override_get_db():

@@ -8,6 +8,7 @@ from alembic.config import Config
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from .admin import warn_if_admin_key_unset
 from .mqtt import (
     alerts_broadcaster,
     events_ingest_loop,
@@ -16,7 +17,7 @@ from .mqtt import (
     sensor_presence_loop,
 )
 from .retention import retention_loop
-from .routers import alerts, events, frames, sensors
+from .routers import alerts, events, frames, sensors, sites
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ def run_migrations() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    warn_if_admin_key_unset()
     run_migrations()
     tasks = [
         asyncio.create_task(mqtt_ingest_loop()),
@@ -72,6 +74,7 @@ app.include_router(frames.router)
 app.include_router(sensors.router)
 app.include_router(events.router)
 app.include_router(alerts.router)
+app.include_router(sites.router)
 
 
 @app.get("/health")

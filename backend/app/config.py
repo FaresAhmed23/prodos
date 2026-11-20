@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     mqtt_topic_events: str = "prodos/events"
     retention_days: int = 7
 
+    # F-19. Optional gate on owner-side /sites endpoints: unset = open (LAN
+    # pilot) and the backend warns at startup.
+    admin_api_key: str | None = None
+
     # F-5. The key is the switch: absent -> template provider, present -> LLM.
     llm_api_base: str | None = None
     llm_model: str | None = None

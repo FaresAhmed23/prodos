@@ -157,3 +157,37 @@ class Incident(Base):
     explained_lang: Mapped[str | None] = mapped_column(String(8))
     explained_severity: Mapped[int | None] = mapped_column(SmallInteger)
     explained_event_count: Mapped[int | None] = mapped_column(Integer)
+
+
+class ChecklistAnswer(Base):
+    __tablename__ = "checklist_answers"
+
+    site_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("site_profile.site_id"), primary_key=True
+    )
+    answers: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class ScoreSnapshot(Base):
+    """One posture score per site per day (spec §5)."""
+
+    __tablename__ = "score_snapshots"
+    __table_args__ = (
+        Index("ix_score_snapshots_site_id_computed_at", "site_id", "computed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(FRAME_PK, primary_key=True, autoincrement=True)
+    site_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("site_profile.site_id"), nullable=False
+    )
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
+    score: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    band: Mapped[str] = mapped_column(String(32), nullable=False)
+    components: Mapped[dict] = mapped_column(JSON, nullable=False)
+    details: Mapped[dict] = mapped_column(JSON, nullable=False)
+    window_days: Mapped[int] = mapped_column(Integer, nullable=False)

@@ -105,14 +105,14 @@ Canonical source: `backend/app/schemas.py`. Duplicate here for reference.
 
 #### QoS per topic
 
-| Topic                               | Publish QoS | Subscribe QoS | Why |
-| ----------------------------------- | ----------- | ------------- | --- |
-| `prodos/sensors/{sensor_id}/frames` | 0           | 0             | High-rate best effort — ~200 frames/sec/sensor. QoS 1 would make the broker queue against a slow consumer, and a dropped batch is tolerable: gaps show up as `batch_seq` jumps. |
+| Topic                               | Publish QoS | Subscribe QoS | Why                                                                                                                                                                                                   |
+| ----------------------------------- | ----------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prodos/sensors/{sensor_id}/frames` | 0           | 0             | High-rate best effort — ~200 frames/sec/sensor. QoS 1 would make the broker queue against a slow consumer, and a dropped batch is tolerable: gaps show up as `batch_seq` jumps.                       |
 | `prodos/events`                     | 1           | 1             | At-least-once. A lost `DetectionEvent` is a silently lost security alert, which is not tolerable. Duplicates are already handled by the `event_id` dedup in `alerts.py` (F-4), so redelivery is free. |
 
 Three things about MQTT QoS that decide whether the table above is even achievable:
 
-- **Delivery QoS is `min(publish QoS, granted subscribe QoS)`.** A SUBSCRIBE can only *lower*
+- **Delivery QoS is `min(publish QoS, granted subscribe QoS)`.** A SUBSCRIBE can only _lower_
   delivery, never raise it. Both sides now ask for QoS 1 on `prodos/events`
   (`backend/app/mqtt.py` `events_ingest_loop`, `detection/main.py`), so the table above is real.
 - **QoS 1 is implemented end-to-end (PRO-16 closed).** `detection/main.py` publishes at `qos=1`
@@ -402,14 +402,14 @@ Stop-Process -Name python -Force
 
 ## 7. Milestones
 
-| ID    | Milestone                                                                   | Target             | Status                                              |
-| ----- | --------------------------------------------------------------------------- | ------------------ | --------------------------------------------------- |
-| M0    | Vertical slice: 1 sensor → MQTT → backend → live dashboard                  | Oct 8, 2026, 20:00 | In progress (backend done, frontend pending Arsany) |
-| M1    | 3 sensors, full storage, deauth-rate rule + duplicate-SSID/BSSID rule       | Nov 15             | Detection team                                      |
-| M2 | Severity scoring, events → alerts pipeline, WebSocket push (<5s end-to-end) | Dec 15 | Backend half **done** (F-4): pipeline, `/ws/alerts` push and REST are complete and measured at 0.02–0.25s from `created_at` to delivery. Severity *scoring* is computed by the detection engine against the §5 `severity` 1–10 contract; documenting that mapping (frame rate, RSSI, pattern confidence per proposal §6.1) is M1 detection work, not backend work. |
-| M3    | AI explanation layer (templates → LLM), alert history UI, usability pass    | Jan 15             | Fares + Mohamed Ahmed                               |
-| M4    | Attack test harness, AWID baseline validation, pilot prep                   | Feb 15             | Zaki + Omar                                         |
-| Pilot | 2-week real deployment at one small business                                | Feb–Mar            | All                                                 |
+| ID    | Milestone                                                                   | Target             | Status                                                                                                                                                                                                                                                                                                                                                             |
+| ----- | --------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| M0    | Vertical slice: 1 sensor → MQTT → backend → live dashboard                  | Oct 8, 2026, 20:00 | In progress (backend done, frontend pending Arsany)                                                                                                                                                                                                                                                                                                                |
+| M1    | 3 sensors, full storage, deauth-rate rule + duplicate-SSID/BSSID rule       | Nov 15             | Detection team                                                                                                                                                                                                                                                                                                                                                     |
+| M2    | Severity scoring, events → alerts pipeline, WebSocket push (<5s end-to-end) | Dec 15             | Backend half **done** (F-4): pipeline, `/ws/alerts` push and REST are complete and measured at 0.02–0.25s from `created_at` to delivery. Severity _scoring_ is computed by the detection engine against the §5 `severity` 1–10 contract; documenting that mapping (frame rate, RSSI, pattern confidence per proposal §6.1) is M1 detection work, not backend work. |
+| M3    | AI explanation layer (templates → LLM), alert history UI, usability pass    | Jan 15             | Fares + Mohamed Ahmed                                                                                                                                                                                                                                                                                                                                              |
+| M4    | Attack test harness, AWID baseline validation, pilot prep                   | Feb 15             | Zaki + Omar                                                                                                                                                                                                                                                                                                                                                        |
+| Pilot | 2-week real deployment at one small business                                | Feb–Mar            | All                                                                                                                                                                                                                                                                                                                                                                |
 
 ## 8. Open Decisions (blocking others — chase these)
 
@@ -767,7 +767,7 @@ exactly, which is the point — existing pilot databases stamp `bfd1100cc262` as
 
 Never edit a revision that has already run somewhere other than a scratch database.
 
-### F-19 · Sites, sensor assignment, checklist — spec ready - NOT STARTED
+### F-19 · Sites, sensor assignment, checklist — DONE (receipt: sites CRUD, sensor assignment, checklist, admin gate; 18 tests + 1 logging hardening test, 130 total; migration c7e2a4d91b06; env.py logging fix); ar wording for 8 checklist questions pending (Mohamed Ahmed)
 
 Spec: `docs/plans/shieldscore.md`.
 

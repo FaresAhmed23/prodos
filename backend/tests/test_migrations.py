@@ -8,6 +8,8 @@ exactly the schema the models describe, and that it reverses.
 
 from pathlib import Path
 
+import logging
+
 import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
@@ -19,9 +21,13 @@ from sqlalchemy import create_engine, inspect
 from app.config import settings
 from app.database import Base
 import app.models  # noqa: F401  -- registers the tables
+import app.admin  # noqa: F401  -- logger must exist before alembic can disable it
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-TABLES = {"frames", "events", "alerts", "explanation_logs", "sensors", "site_profile", "incidents"}
+TABLES = {
+    "frames", "events", "alerts", "explanation_logs", "sensors",
+    "site_profile", "incidents", "score_snapshots", "checklist_answers",
+}
 
 
 def alembic_config() -> Config:
@@ -121,6 +127,8 @@ def test_every_index_is_created(migrated):
         "sensors": {"ix_sensors_status"},
         "site_profile": set(),
         "incidents": {"ix_incidents_site_key_last"},
+        "score_snapshots": {"ix_score_snapshots_site_id_computed_at"},
+        "checklist_answers": set(),
     }
     for table, names in expected.items():
         got = {i["name"] for i in insp.get_indexes(table)}
@@ -146,6 +154,15 @@ def test_upgrade_is_idempotent(migrated):
     command.upgrade(alembic_config(), "head")
     command.upgrade(alembic_config(), "head")
     assert tables_in(migrated) == TABLES
+
+
+def test_migrations_keep_the_app_loggers_enabled(migrated):
+    """Alembic's fileConfig default disables every existing logger.
+
+    The lifespan imports the app loggers before running migrations, so the
+    default silently killed all backend logging after startup.
+    """
+    assert not logging.getLogger("app.admin").disabled
 
 
 # --- the migration chain itself --------------------------------------------
