@@ -771,7 +771,7 @@ Never edit a revision that has already run somewhere other than a scratch databa
 
 Spec: `docs/plans/shieldscore.md`.
 
-### F-20 · ShieldScore engine, snapshots, score endpoints — spec ready - NOT STARTED
+# ### F-20 · ShieldScore engine, snapshots, score endpoints — DONE (receipt: five §3 components, 7d rolling window with bucket clamp, siteless attribution, same-day idempotent upsert, daily score_loop, GET /score + GET /score/history; 22 tests, 153 total; no migration; known_access_points MACs normalized on write and compare); alert-response ack approximation pending acknowledged_at (scheduled after F-21)
 
 Spec: `docs/plans/shieldscore.md`.
 

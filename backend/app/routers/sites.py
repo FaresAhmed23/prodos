@@ -1,13 +1,13 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..admin import require_admin
 from ..database import get_db
-from ..models import ChecklistAnswer, Sensor, SiteProfile, utcnow
+from ..models import ChecklistAnswer, ScoreSnapshot, Sensor, SiteProfile, utcnow
 from ..schemas import SensorOut
 from ..scoring.config import CHECKLIST_QUESTIONS
 
@@ -60,6 +60,20 @@ class ChecklistOut(BaseModel):
     site_id: str
     answers: dict[str, bool | None]
     updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ScoreOut(BaseModel):
+    """REST-only shape (spec §5/§6), same reason AlertStats is router-local."""
+
+    site_id: str
+    computed_at: datetime
+    score: int
+    band: str
+    components: dict[str, float]
+    details: dict
+    window_days: int
 
     model_config = {"from_attributes": True}
 
@@ -159,3 +173,35 @@ def put_checklist(
     row.updated_at = utcnow()
     db.commit()
     return row
+
+
+@router.get("/{site_id}/score", response_model=ScoreOut)
+def get_score(site_id: str, db: Session = Depends(get_db)) -> ScoreSnapshot:
+    _site_or_404(db, site_id)
+    row = db.execute(
+        select(ScoreSnapshot)
+        .where(ScoreSnapshot.site_id == site_id)
+        .order_by(ScoreSnapshot.computed_at.desc(), ScoreSnapshot.id.desc())
+        .limit(1)
+    ).scalars().first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no snapshot yet")
+    return row
+
+
+@router.get("/{site_id}/score/history", response_model=list[ScoreOut])
+def get_score_history(
+    site_id: str,
+    limit: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
+) -> list[ScoreSnapshot]:
+    _site_or_404(db, site_id)
+    rows = list(
+        db.execute(
+            select(ScoreSnapshot)
+            .where(ScoreSnapshot.site_id == site_id)
+            .order_by(ScoreSnapshot.computed_at.desc(), ScoreSnapshot.id.desc())
+            .limit(limit)
+        ).scalars()
+    )
+    return list(reversed(rows))

@@ -52,6 +52,19 @@ def test_patch_cannot_null_a_required_field(client):
     assert res.json()["primary_language"] == "en"
 
 
+def test_patch_null_clears_optional_field(client):
+    client.post(
+        "/sites",
+        json=site_payload(notes="back door router", router_model="TP-Link X20"),
+    )
+    res = client.patch(
+        "/sites/cafe-1", json={"notes": None, "router_model": None}
+    )
+    assert res.status_code == 200
+    assert res.json()["notes"] is None
+    assert res.json()["router_model"] is None
+
+
 def test_patch_keeps_untouched_fields(client):
     client.post("/sites", json=site_payload())
     res = client.patch("/sites/cafe-1", json={"notes": "back door router"})

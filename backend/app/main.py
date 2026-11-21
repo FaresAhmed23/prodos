@@ -18,6 +18,7 @@ from .mqtt import (
 )
 from .retention import retention_loop
 from .routers import alerts, events, frames, sensors, sites
+from .scoring.engine import score_loop
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(events_ingest_loop()),
         asyncio.create_task(sensor_presence_loop()),
         asyncio.create_task(retention_loop()),
+        asyncio.create_task(score_loop()),
     ]
     try:
         yield
