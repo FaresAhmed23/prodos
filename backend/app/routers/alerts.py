@@ -102,7 +102,12 @@ def update_alert(
     alert = db.get(AlertModel, alert_id)
     if alert is None:
         raise HTTPException(status_code=404, detail="alert not found")
+    was_new = alert.status == "new"
     alert.status = body.status
+    # F-22: only the first acknowledgement stamps the clock; re-reaching
+    # "acknowledged" from elsewhere must never rewrite it.
+    if was_new and body.status == "acknowledged":
+        alert.acknowledged_at = utcnow()
     db.commit()
     db.refresh(alert)
     return alert

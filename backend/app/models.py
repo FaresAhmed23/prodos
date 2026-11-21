@@ -60,6 +60,11 @@ class Alert(Base):
     explanation: Mapped[str] = mapped_column(Text)
     recommended_action: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), default="new", index=True)
+    # F-22: written once, on new -> acknowledged only. Null on historical rows
+    # and never-acknowledged alerts; scoring counts null as unacked.
+    acknowledged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Edit: Additions:
     lang: Mapped[str] = mapped_column(String(8), nullable=True)

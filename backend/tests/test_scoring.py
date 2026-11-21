@@ -74,7 +74,9 @@ def seed_event(session, event_id, sensor_ids, severity=10, detected_at=NOW):
     )
 
 
-def seed_alert(session, alert_id, event_id, status="new", created_at=NOW):
+def seed_alert(
+    session, alert_id, event_id, status="new", created_at=NOW, acknowledged_at=None
+):
     session.add(
         Alert(
             alert_id=alert_id,
@@ -85,6 +87,7 @@ def seed_alert(session, alert_id, event_id, status="new", created_at=NOW):
             explanation="seeded",
             recommended_action="seeded",
             status=status,
+            acknowledged_at=acknowledged_at,
         )
     )
 
@@ -103,10 +106,13 @@ def seed_golden(session):
     seed_frame(session, NOW, bssid="AA:BB:CC:DD:EE:01", ssid="CafeWiFi")
     seed_frame(session, NOW - timedelta(seconds=600), bssid="AA:BB:CC:DD:EE:02", ssid="CafeWiFi")
 
-    # One acknowledged, one open -> response 0.5. Severity 10 + 10 -> 20/40.
+    # One acknowledged inside the window, one open -> response 0.5.
+    # Severity 10 + 10 -> 20/40.
     seed_event(session, "event-1", ["sensor-1"], severity=10)
     seed_event(session, "event-2", ["sensor-1"], severity=10)
-    seed_alert(session, "alert-1", "event-1", status="acknowledged")
+    seed_alert(
+        session, "alert-1", "event-1", status="acknowledged", acknowledged_at=NOW
+    )
     seed_alert(session, "alert-2", "event-2", status="new")
 
     # Belongs to no site: must not count anywhere, but must be visible.
@@ -149,7 +155,14 @@ def test_unacked_over_72h_caps_alert_response(session):
     old = NOW - timedelta(hours=100)
     for i in range(3):
         seed_event(session, f"event-{i}", ["sensor-1"], severity=1, detected_at=old)
-        seed_alert(session, f"alert-{i}", f"event-{i}", status="acknowledged", created_at=old)
+        seed_alert(
+            session,
+            f"alert-{i}",
+            f"event-{i}",
+            status="acknowledged",
+            created_at=old,
+            acknowledged_at=old + timedelta(hours=1),
+        )
     seed_event(session, "event-stale", ["sensor-1"], severity=1, detected_at=old)
     seed_alert(session, "alert-stale", "event-stale", status="new", created_at=old)
     session.commit()
@@ -160,6 +173,46 @@ def test_unacked_over_72h_caps_alert_response(session):
     assert result["details"]["alert_response"]["ratio"] == 0.5
     assert result["details"]["alert_response"]["unacked_over_72h"] is True
     assert result["components"]["alert_response"] == 15.0
+
+
+def test_late_acknowledgement_does_not_inflate_response(session):
+    seed_site(session)
+    seed_sensor(session)
+    created = NOW - timedelta(hours=30)
+    seed_event(session, "event-late", ["sensor-1"], severity=1, detected_at=created)
+    seed_alert(
+        session,
+        "alert-late",
+        "event-late",
+        status="acknowledged",
+        created_at=created,
+        acknowledged_at=created + timedelta(hours=25),
+    )
+    session.commit()
+
+    result = engine.compute_site_score(session, session.get(SiteProfile, "cafe-1"), NOW)
+
+    # 25h > RESPONSE_WINDOW_HOURS: acknowledged, but too late to count.
+    assert result["details"]["alert_response"] == {
+        "ratio": 0.0,
+        "alerts": 1,
+        "acknowledged": 0,
+        "unacked_over_72h": False,
+    }
+
+
+def test_null_acknowledged_at_counts_as_unacked(session):
+    seed_site(session)
+    seed_sensor(session)
+    seed_event(session, "event-1", ["sensor-1"], severity=1)
+    # Legacy row: status says acknowledged, but there is no stamp to prove it.
+    seed_alert(session, "alert-1", "event-1", status="acknowledged")
+    session.commit()
+
+    result = engine.compute_site_score(session, session.get(SiteProfile, "cafe-1"), NOW)
+
+    assert result["details"]["alert_response"]["acknowledged"] == 0
+    assert result["details"]["alert_response"]["ratio"] == 0.0
 
 
 def test_no_alerts_scores_full_response(session):

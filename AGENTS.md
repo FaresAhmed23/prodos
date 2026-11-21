@@ -779,6 +779,10 @@ Spec: `docs/plans/shieldscore.md`.
 
 Spec: `docs/plans/trust.md`.
 
+### F-22 · Alert acknowledged_at follow-up — DONE (receipt: nullable alerts.acknowledged_at stamped only on new->acknowledged; response ratio counts acks within 24h, null/legacy rows count unacked, >72h-unacked cap unchanged; migration b72d4e91c6a8; 4 tests, 171 total)
+
+Spec: `docs/plans/shieldscore.md` §3 (alert response); closes the approximation filed in F-20.
+
 ### F-10 · v2 roadmap — the "10/10" plan (do NOT start until M0–M4 are complete)
 
 Gate: F-11 through F-17 begin only after M4 closes (Feb 2027). One exception: passive data collection (explanation_logs) and pilot design happen during the pilot itself. Nothing here touches the repo before then. Budget: all software is 0 EGP (free GPU tiers, free bot APIs, public datasets); the only hardware addition is one extra ESP32 (~350 EGP), shared between F-13's calibration transmitter and the M4 attack harness. Total project cost stays under ~2,000 EGP.

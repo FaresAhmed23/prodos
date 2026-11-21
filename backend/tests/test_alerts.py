@@ -32,6 +32,8 @@ def test_patch_to_acknowledged(client, session):
     res = client.patch(f"/alerts/{alert.alert_id}", json={"status": "acknowledged"})
     assert res.status_code == 200
     assert res.json()["status"] == "acknowledged"
+    session.expire_all()
+    assert session.get(Alert, alert.alert_id).acknowledged_at is not None
 
 
 def test_patch_to_resolved(client, session):
@@ -70,6 +72,28 @@ def test_patch_persists(client, session):
     client.patch(f"/alerts/{alert.alert_id}", json={"status": "resolved"})
     session.expire_all()
     assert session.get(Alert, alert.alert_id).status == "resolved"
+
+
+def test_only_new_to_acknowledged_stamps_the_clock(client, session):
+    alert = seed(session)
+    session.commit()
+    client.patch(f"/alerts/{alert.alert_id}", json={"status": "acknowledged"})
+    session.expire_all()
+    stamped = session.get(Alert, alert.alert_id).acknowledged_at
+    assert stamped is not None
+
+    client.patch(f"/alerts/{alert.alert_id}", json={"status": "resolved"})
+    session.expire_all()
+    assert session.get(Alert, alert.alert_id).acknowledged_at == stamped
+
+
+def test_resolving_a_legacy_acknowledged_row_leaves_the_stamp_null(client, session):
+    alert = seed(session, status="acknowledged")
+    session.commit()
+    res = client.patch(f"/alerts/{alert.alert_id}", json={"status": "resolved"})
+    assert res.status_code == 200
+    session.expire_all()
+    assert session.get(Alert, alert.alert_id).acknowledged_at is None
 
 
 # --- listing + cursor pagination ------------------------------------------

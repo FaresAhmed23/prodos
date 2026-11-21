@@ -21,6 +21,7 @@ from .config import (
     BUCKETS_PER_WINDOW,
     CHECKLIST_QUESTIONS,
     EXPOSURE_CAP_WEIGHT,
+    RESPONSE_WINDOW_HOURS,
     UNACKED_CAP_AFTER_HOURS,
     UNACKED_CAP_RATIO,
     WEIGHTS,
@@ -98,26 +99,29 @@ def compute_site_score(
             "sensors": len(site_sensors),
         }
 
-    # Alert response: an alert is attributed through its event's sensors.
-    # shortcut: Alert stores only a status, no acknowledgement timestamp, so
-    # any status other than "new" counts as acknowledged and the 24h bound in
-    # §3 cannot be enforced; add acknowledged_at before trusting the ratio.
+    # Alert response: an alert is attributed through its event's sensors. Only
+    # an acknowledgement inside RESPONSE_WINDOW_HOURS of creation counts; a null
+    # stamp (historical rows included) is unacked. Alerts still open past 72h
+    # cap the ratio at 0.5.
     stale_before = now - timedelta(hours=UNACKED_CAP_AFTER_HOURS)
+    ack_window = timedelta(hours=RESPONSE_WINDOW_HOURS)
     rows = session.execute(
-        select(Alert.created_at, Alert.status, Event.sensor_ids)
+        select(Alert.created_at, Alert.acknowledged_at, Event.sensor_ids)
         .select_from(Alert)
         .join(Event, Event.event_id == Alert.event_id)
         .where(Alert.created_at >= cutoff)
     ).all()
     alerts_total = alerts_acked = 0
     unacked_over_72h = False
-    for created_at, status, sensor_ids in rows:
+    for created_at, acknowledged_at, sensor_ids in rows:
         if site.site_id not in _owners(sensor_ids, sensor_site):
             continue
         alerts_total += 1
-        if status != "new":
-            alerts_acked += 1
-        elif _as_utc(created_at) < stale_before:
+        created = _as_utc(created_at)
+        if acknowledged_at is not None:
+            if _as_utc(acknowledged_at) - created <= ack_window:
+                alerts_acked += 1
+        elif created < stale_before:
             unacked_over_72h = True
     response_ratio = 1.0 if alerts_total == 0 else alerts_acked / alerts_total
     if unacked_over_72h:
