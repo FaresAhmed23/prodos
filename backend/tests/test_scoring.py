@@ -247,6 +247,31 @@ def test_known_access_points_normalized_on_write_and_compared(client, session):
     assert legacy["components"]["network_hygiene"] == 15.0
 
 
+def test_hygiene_sensor_scoped_when_sites_share_ssid(session):
+    seed_site(session, "cafe-1", ssids=("CafeWiFi",), aps=("AA:BB:CC:DD:EE:01",))
+    seed_site(session, "cafe-2", ssids=("CafeWiFi",), aps=("AA:BB:CC:DD:EE:02",))
+    seed_sensor(session, "sensor-1", "cafe-1")
+    seed_sensor(session, "sensor-2", "cafe-2")
+    seed_frame(
+        session, NOW, sensor_id="sensor-1", bssid="AA:BB:CC:DD:EE:01", ssid="CafeWiFi"
+    )
+    seed_frame(
+        session, NOW, sensor_id="sensor-2", bssid="AA:BB:CC:DD:EE:02", ssid="CafeWiFi"
+    )
+    # Not assigned to any site: its frames count toward nobody.
+    seed_frame(
+        session, NOW, sensor_id="sensor-roam", bssid="AA:BB:CC:DD:EE:03", ssid="CafeWiFi"
+    )
+    session.commit()
+
+    for site_id in ("cafe-1", "cafe-2"):
+        result = engine.compute_site_score(
+            session, session.get(SiteProfile, site_id), NOW
+        )
+        assert result["components"]["network_hygiene"] == 15.0
+        assert result["details"]["network_hygiene"]["bssids"] == 1
+
+
 @pytest.mark.parametrize(
     "score,band",
     [

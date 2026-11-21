@@ -16,7 +16,7 @@ The score measures the business's posture and practices, NOT how much it is atta
 | ------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Monitoring coverage | 30     | (10-minute buckets in window with >=1 frame from an assigned sensor) / (total buckets). 7d window = 1008 buckets. No sensors assigned -> 0, flag no_sensors_assigned.         |
 | Alert response      | 30     | alerts attributed to the site in window: acked_within_24h / total; total==0 -> 1.0. Any alert unacked >72h caps this component at 0.5.                                        |
-| Network hygiene     | 15     | distinct BSSIDs seen broadcasting any of site.wifi_ssids in window; allowed = those in known_access_points; allowed/total. total==0 -> 0, flag ssids_not_configured.          |
+| Network hygiene     | 15     | distinct BSSIDs seen by the site's assigned sensors broadcasting any of site.wifi_ssids in window; allowed = those in known_access_points; allowed/total. total==0 -> 0, flag ssids_not_configured.          |
 | Practices checklist | 15     | yes_count / 8. Unanswered counts as 0 (displayed "not answered").                                                                                                             |
 | Threat exposure     | 10     | 10 \* (1 - min(1, severity_weighted / EXPOSURE_CAP_WEIGHT)). severity_weighted = sum of event severities attributed to the site in window; EXPOSURE_CAP_WEIGHT = 40 (config). |
 

@@ -123,15 +123,18 @@ def compute_site_score(
     if unacked_over_72h:
         response_ratio = min(response_ratio, UNACKED_CAP_RATIO)
 
-    # Network hygiene: distinct BSSIDs broadcasting one of the site's SSIDs,
-    # and how many of those are declared known access points.
+    # Network hygiene: distinct BSSIDs heard by the site's own sensors,
+    # broadcasting one of the site's SSIDs, and how many are declared known.
+    # Sensorless site -> empty universe. Unassigned sensors count toward
+    # nobody. total==0 -> 0 and ssids_not_configured.
     ssids = list(site.wifi_ssids or [])
-    if ssids:
+    if ssids and site_sensors:
         bssids = set(
             session.execute(
                 select(Frame.bssid).where(
                     Frame.frame_type == "beacon",
                     Frame.received_at >= cutoff,
+                    Frame.sensor_id.in_(site_sensors),
                     Frame.bssid.is_not(None),
                     Frame.ssid.in_(ssids),
                 )
