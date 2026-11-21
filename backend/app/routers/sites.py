@@ -1,14 +1,15 @@
 from datetime import datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..admin import require_admin
 from ..database import get_db
 from ..models import ChecklistAnswer, ScoreSnapshot, Sensor, SiteProfile, utcnow
-from ..schemas import SensorOut
+from ..schemas import SensorOut, normalize_mac
 from ..scoring.config import CHECKLIST_QUESTIONS
 
 router = APIRouter(
@@ -16,12 +17,21 @@ router = APIRouter(
 )
 
 
+def _normalize_macs(values: list[str]) -> list[str]:
+    return [normalize_mac(value) for value in values]
+
+
+# Owner-entered APs are compared against frame BSSIDs, which are normalized at
+# ingest. Normalize here too, or a lowercase entry never matches.
+MacList = Annotated[list[str], AfterValidator(_normalize_macs)]
+
+
 class SiteCreate(BaseModel):
     site_id: str = Field(min_length=1, max_length=64)
     business_name: str | None = Field(default=None, max_length=200)
     business_type: str | None = Field(default=None, max_length=64)
     wifi_ssids: list[str] = Field(default_factory=list)
-    known_access_points: list[str] = Field(default_factory=list)
+    known_access_points: MacList = Field(default_factory=list)
     router_model: str | None = Field(default=None, max_length=100)
     primary_language: str = Field(default="en", min_length=2, max_length=8)
     notes: str | None = None
@@ -31,7 +41,7 @@ class SiteUpdate(BaseModel):
     business_name: str | None = Field(default=None, max_length=200)
     business_type: str | None = Field(default=None, max_length=64)
     wifi_ssids: list[str] | None = None
-    known_access_points: list[str] | None = None
+    known_access_points: MacList | None = None
     router_model: str | None = Field(default=None, max_length=100)
     primary_language: str | None = Field(default=None, min_length=2, max_length=8)
     notes: str | None = None

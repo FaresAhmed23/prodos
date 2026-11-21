@@ -22,6 +22,8 @@ BANDS = (
     (80, 100, "good"),
 )
 
+# Follow-up after F-21: no acknowledged_at column yet, so the 24h bound is not
+# enforced; scoring/engine.py carries the shortcut. Wire this when ack time lands.
 RESPONSE_WINDOW_HOURS = 24
 UNACKED_CAP_AFTER_HOURS = 72
 UNACKED_CAP_RATIO = 0.5

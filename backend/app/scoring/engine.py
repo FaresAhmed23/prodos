@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from ..database import SessionLocal
 from ..models import Alert, ChecklistAnswer, Event, Frame, ScoreSnapshot, Sensor, SiteProfile, utcnow
+from ..schemas import normalize_mac
 from .config import (
     BANDS,
     BUCKET_SECONDS,
@@ -42,6 +43,14 @@ def _site_sensor_map(session: Session) -> dict[str, str | None]:
 
 def _owners(sensor_ids, sensor_site: dict[str, str | None]) -> set[str]:
     return {sensor_site.get(sid) for sid in (sensor_ids or [])} - {None}
+
+
+def _mac_key(value: str) -> str:
+    """Frame BSSIDs are normalized at ingest; stored APs may predate F-20."""
+    try:
+        return normalize_mac(value)
+    except ValueError:
+        return value.strip().upper()
 
 
 def band_for(score: int) -> str:
@@ -130,7 +139,9 @@ def compute_site_score(
         )
     else:
         bssids = set()
-    allowed = len(bssids & set(site.known_access_points or []))
+    allowed = len({_mac_key(bssid) for bssid in bssids} & {
+        _mac_key(mac) for mac in (site.known_access_points or [])
+    })
     if not bssids:
         hygiene_ratio = 0.0
         flags.append("ssids_not_configured")

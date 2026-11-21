@@ -207,6 +207,51 @@ def test_flags_when_unmonitored_and_unconfigured(session):
     assert result["details"]["flags"] == ["no_sensors_assigned", "ssids_not_configured"]
 
 
+def test_known_access_points_normalized_on_write_and_compared(client, session):
+    res = client.post(
+        "/sites",
+        json={
+            "site_id": "cafe-1",
+            "wifi_ssids": ["CafeWiFi"],
+            "known_access_points": ["aa-bb-cc-dd-ee-01"],
+        },
+    )
+    assert res.status_code == 201
+    assert res.json()["known_access_points"] == ["AA:BB:CC:DD:EE:01"]
+    bad = client.post(
+        "/sites", json={"site_id": "bad", "known_access_points": ["nope"]}
+    )
+    assert bad.status_code == 422
+    patched = client.patch(
+        "/sites/cafe-1", json={"known_access_points": ["aa:bb:cc:dd:ee:01"]}
+    )
+    assert patched.json()["known_access_points"] == ["AA:BB:CC:DD:EE:01"]
+
+    # A row written before F-20 can still hold lowercase; the engine must
+    # compare normalized copies, not raw strings.
+    session.add(
+        SiteProfile(
+            site_id="legacy-1",
+            wifi_ssids=["CafeWiFi"],
+            known_access_points=["aa:bb:cc:dd:ee:02"],
+        )
+    )
+    seed_sensor(session, "sensor-1", "cafe-1")
+    seed_sensor(session, "sensor-2", "legacy-1")
+    seed_frame(
+        session, NOW, sensor_id="sensor-1", bssid="AA:BB:CC:DD:EE:01", ssid="CafeWiFi"
+    )
+    seed_frame(
+        session, NOW, sensor_id="sensor-2", bssid="AA:BB:CC:DD:EE:02", ssid="CafeWiFi"
+    )
+    session.commit()
+
+    cafe = engine.compute_site_score(session, session.get(SiteProfile, "cafe-1"), NOW)
+    legacy = engine.compute_site_score(session, session.get(SiteProfile, "legacy-1"), NOW)
+    assert cafe["components"]["network_hygiene"] == 15.0
+    assert legacy["components"]["network_hygiene"] == 15.0
+
+
 @pytest.mark.parametrize(
     "score,band",
     [
