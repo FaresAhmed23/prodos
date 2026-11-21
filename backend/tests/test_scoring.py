@@ -228,21 +228,16 @@ def test_known_access_points_normalized_on_write_and_compared(client, session):
     assert patched.json()["known_access_points"] == ["AA:BB:CC:DD:EE:01"]
 
     # A row written before F-20 can still hold lowercase; the engine must
-    # compare normalized copies, not raw strings.
-    session.add(
-        SiteProfile(
-            site_id="legacy-1",
-            wifi_ssids=["CafeWiFi"],
-            known_access_points=["aa:bb:cc:dd:ee:02"],
-        )
-    )
+    # compare normalized copies, not raw strings. Separate SSID, because
+    # hygiene counts every BSSID on the site's SSID regardless of sensor.
+    seed_site(session, "legacy-1", ssids=("LegacyWiFi",), aps=("aa:bb:cc:dd:ee:02",))
     seed_sensor(session, "sensor-1", "cafe-1")
     seed_sensor(session, "sensor-2", "legacy-1")
     seed_frame(
         session, NOW, sensor_id="sensor-1", bssid="AA:BB:CC:DD:EE:01", ssid="CafeWiFi"
     )
     seed_frame(
-        session, NOW, sensor_id="sensor-2", bssid="AA:BB:CC:DD:EE:02", ssid="CafeWiFi"
+        session, NOW, sensor_id="sensor-2", bssid="AA:BB:CC:DD:EE:02", ssid="LegacyWiFi"
     )
     session.commit()
 
