@@ -17,7 +17,7 @@ from .mqtt import (
     sensor_presence_loop,
 )
 from .retention import retention_loop
-from .routers import alerts, events, frames, sensors, sites
+from .routers import alerts, events, frames, sensors, sites, trust
 from .scoring.engine import score_loop
 
 logging.basicConfig(level=logging.INFO)
@@ -77,6 +77,7 @@ app.include_router(sensors.router)
 app.include_router(events.router)
 app.include_router(alerts.router)
 app.include_router(sites.router)
+app.include_router(trust.router)
 
 
 @app.get("/health")

@@ -135,6 +135,28 @@ def test_every_index_is_created(migrated):
         assert names <= got, f"{table} missing {names - got}"
 
 
+def test_site_profile_trust_token_schema(migrated):
+    """F-21 §3: three nullable token columns plus the unique constraint.
+
+    `compare_metadata` does not reliably compare unique constraints, so this
+    inspects the built schema directly. The unique constraint is what keeps
+    token lookup unambiguous; NULL (not enrolled) stays unconstrained.
+    """
+    insp = inspect(create_engine(migrated))
+    cols = {
+        c["name"]: (str(c["type"]), bool(c["nullable"]))
+        for c in insp.get_columns("site_profile")
+    }
+    assert cols["trust_token"] == ("VARCHAR(64)", True)
+    assert cols["trust_token_created_at"] == ("DATETIME", True)
+    assert cols["trust_token_rotated_at"] == ("DATETIME", True)
+    unique = {
+        u["name"]: tuple(u["column_names"])
+        for u in insp.get_unique_constraints("site_profile")
+    }
+    assert unique["uq_site_profile_trust_token"] == ("trust_token",)
+
+
 # --- reversibility ---------------------------------------------------------
 
 

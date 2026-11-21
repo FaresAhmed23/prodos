@@ -775,7 +775,7 @@ Spec: `docs/plans/shieldscore.md`.
 
 Spec: `docs/plans/shieldscore.md`.
 
-### F-21 · Trust — spec ready - NOT STARTED
+### F-21 · Public trust page, QR, trust tokens — DONE (receipt: enroll/rotate/revoke behind admin gate; public page whitelist-only with exact 404 JSON and cache headers; QR PNG byte-pinned to trust URL; forbidden-content + field-leak + HTML-escape tests; 13 tests, 167 total; migration e4f1b7c92a03; segno per spec); trust URL host derives from request — revisit behind a proxy
 
 Spec: `docs/plans/trust.md`.
 

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, DateTime, Float, Integer, SmallInteger, String, Text, ForeignKey, Index
+from sqlalchemy import JSON, BigInteger, DateTime, Float, Integer, SmallInteger, String, Text, ForeignKey, Index, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -114,6 +114,9 @@ class Sensor(Base):
 # Saves the state of a business so the llm can know who its dealing with.
 class SiteProfile(Base):
     __tablename__ = "site_profile"
+    __table_args__ = (
+        UniqueConstraint("trust_token", name="uq_site_profile_trust_token"),
+    )
 
     site_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     business_name: Mapped[str | None] = mapped_column(String(200))
@@ -123,6 +126,15 @@ class SiteProfile(Base):
     router_model: Mapped[str | None] = mapped_column(String(100))
     primary_language: Mapped[str] = mapped_column(String(8), default="en")
     notes: Mapped[str | None] = mapped_column(Text)
+    # F-21 public trust page. Null token = not enrolled; rotate replaces the
+    # token, revoke nulls it.
+    trust_token: Mapped[str | None] = mapped_column(String(64))
+    trust_token_created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    trust_token_rotated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(

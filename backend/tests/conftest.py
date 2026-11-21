@@ -46,6 +46,7 @@ from app.routers import events as events_router  # noqa: E402
 from app.routers import frames as frames_router  # noqa: E402
 from app.routers import sensors as sensors_router  # noqa: E402
 from app.routers import sites as sites_router  # noqa: E402
+from app.routers import trust as trust_router  # noqa: E402
 
 
 @pytest.fixture
@@ -76,7 +77,7 @@ def session(session_factory):
 @pytest.fixture
 def client(session):
     app = FastAPI()
-    for module in (frames_router, sensors_router, events_router, alerts_router, sites_router):
+    for module in (frames_router, sensors_router, events_router, alerts_router, sites_router, trust_router):
         app.include_router(module.router)
 
     def override_get_db():

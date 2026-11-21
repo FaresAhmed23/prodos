@@ -7,3 +7,4 @@ pydantic-settings
 aiomqtt
 httpx                    # F-5: chat-completions POST for the LLM explanation provider
 alembic                  # F-9: schema migrations, run at startup (app.main.run_migrations)
+segno                    # F-21: pure-Python QR for the public trust page (§4, approved)

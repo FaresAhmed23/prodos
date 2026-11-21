@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime
 from typing import Annotated
 
@@ -84,6 +85,15 @@ class ScoreOut(BaseModel):
     components: dict[str, float]
     details: dict
     window_days: int
+
+    model_config = {"from_attributes": True}
+
+
+class TrustOut(BaseModel):
+    """REST-only shape (F-21 §4), same reason ScoreOut is router-local."""
+
+    site_id: str
+    trust_token: str
 
     model_config = {"from_attributes": True}
 
@@ -215,3 +225,24 @@ def get_score_history(
         ).scalars()
     )
     return list(reversed(rows))
+
+
+@router.post("/{site_id}/trust", response_model=TrustOut)
+def enroll_trust(site_id: str, db: Session = Depends(get_db)) -> SiteProfile:
+    """Enroll, or rotate if already enrolled. Old token dies immediately."""
+    site = _site_or_404(db, site_id)
+    now = utcnow()
+    if site.trust_token is None:
+        site.trust_token_created_at = now
+    else:
+        site.trust_token_rotated_at = now
+    site.trust_token = secrets.token_urlsafe(24)
+    db.commit()
+    return site
+
+
+@router.delete("/{site_id}/trust", status_code=status.HTTP_204_NO_CONTENT)
+def revoke_trust(site_id: str, db: Session = Depends(get_db)) -> None:
+    site = _site_or_404(db, site_id)
+    site.trust_token = None
+    db.commit()
