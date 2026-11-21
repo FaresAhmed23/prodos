@@ -128,6 +128,9 @@ class SensorUpdate(BaseModel):
 
 class SensorOut(BaseModel):
     sensor_id: str
+    # F-24: REST-only. The dashboard must know which site owns a sensor; the
+    # column always existed (models.Sensor.site_id), it was just not exposed.
+    site_id: str | None
     name: str | None
     location: str | None
     channels: list[int]

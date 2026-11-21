@@ -164,6 +164,47 @@ def test_checklist_unknown_site_is_404(client):
     assert res.status_code == 404
 
 
+def test_checklist_get_is_empty_before_first_save(client):
+    client.post("/sites", json=site_payload())
+    res = client.get("/sites/cafe-1/checklist")
+    assert res.status_code == 200
+    assert res.json()["answers"] == {}
+    assert res.json()["updated_at"] is not None
+
+
+def test_checklist_get_returns_saved_answers(client):
+    client.post("/sites", json=site_payload())
+    client.put(
+        "/sites/cafe-1/checklist",
+        json={"answers": {"wpa2_or_wpa3": True, "guest_network_separate": False}},
+    )
+    res = client.get("/sites/cafe-1/checklist")
+    assert res.status_code == 200
+    assert res.json()["answers"] == {
+        "wpa2_or_wpa3": True,
+        "guest_network_separate": False,
+    }
+    assert client.get("/sites/nope/checklist").status_code == 404
+
+
+def test_sensor_list_exposes_site_id(client, session):
+    client.post("/sites", json=site_payload())
+    seed_sensor(session)
+    assert client.get("/sensors").json()[0]["site_id"] is None
+
+    client.patch("/sites/cafe-1/sensors/sensor-1")
+    assert client.get("/sensors").json()[0]["site_id"] == "cafe-1"
+
+
+def test_trust_token_is_visible_to_the_owner_and_survives_reload(client):
+    client.post("/sites", json=site_payload())
+    assert client.get("/sites/cafe-1").json()["trust_token"] is None
+
+    token = client.post("/sites/cafe-1/trust").json()["trust_token"]
+    assert token
+    assert client.get("/sites/cafe-1").json()["trust_token"] == token
+
+
 # --- admin key -------------------------------------------------------------
 
 

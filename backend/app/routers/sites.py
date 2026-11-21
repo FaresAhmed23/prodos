@@ -57,6 +57,9 @@ class SiteOut(BaseModel):
     router_model: str | None
     primary_language: str
     notes: str | None
+    # F-24: owner-side only. Admin-gated here, so the dashboard can re-render
+    # the QR card after a reload; the public /trust page never reads SiteOut.
+    trust_token: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -166,6 +169,19 @@ def unassign_sensor(
     sensor.site_id = None
     db.commit()
     return sensor
+
+
+@router.get("/{site_id}/checklist", response_model=ChecklistOut)
+def get_checklist(
+    site_id: str, db: Session = Depends(get_db)
+) -> ChecklistAnswer | ChecklistOut:
+    """Read side for the dashboard. No row yet is a real state, not a 404:
+    every question counts as "no" in scoring until answered."""
+    _site_or_404(db, site_id)
+    row = db.get(ChecklistAnswer, site_id)
+    if row is None:
+        return ChecklistOut(site_id=site_id, answers={}, updated_at=utcnow())
+    return row
 
 
 @router.put("/{site_id}/checklist", response_model=ChecklistOut)
