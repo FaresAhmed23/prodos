@@ -7,7 +7,9 @@ timestamp format, WebSocket lifecycle, and the mistakes that actually bite.
 Base URL in development: `http://localhost:8000` · CORS already allows
 `http://localhost:5173` and `http://localhost:3000`.
 
-**No authentication yet.** Every endpoint is open, because the pilot is a LAN-only café network.
+**No user accounts.** The pipeline endpoints (`/alerts`, `/events`, `/frames`, `/sensors`, the two
+WebSockets) are open, because the pilot is a LAN-only café network. The owner-side `/sites` group has
+one optional gate, `X-Admin-Key`, described in [Owner tools](#owner-tools-sites-checklist-score-trust).
 Do not build anything that assumes a session exists. Auth lands with TLS before the pilot.
 
 ---
@@ -27,8 +29,24 @@ Do not build anything that assumes a session exists. Auth lands with TLS before 
 | POST | `/sensors` | the created `SensorOut` |
 | GET | `/sensors/{sensor_id}` | one `SensorOut` |
 | PATCH | `/sensors/{sensor_id}` | the updated `SensorOut` |
+| GET | `/sites` | array of `SiteOut` |
+| POST | `/sites` | the created `SiteOut` |
+| GET | `/sites/{site_id}` | one `SiteOut` |
+| PATCH | `/sites/{site_id}` | the updated `SiteOut` |
+| PATCH | `/sites/{site_id}/sensors/{sensor_id}` | the assigned `SensorOut` |
+| DELETE | `/sites/{site_id}/sensors/{sensor_id}` | the unassigned `SensorOut` |
+| GET | `/sites/{site_id}/checklist` | `ChecklistOut` (`answers: {}` before the first save) |
+| PUT | `/sites/{site_id}/checklist` | the saved `ChecklistOut` |
+| GET | `/sites/{site_id}/score` | the latest `ScoreOut` |
+| GET | `/sites/{site_id}/score/history` | array of `ScoreOut`, oldest first |
+| POST | `/sites/{site_id}/trust` | `TrustOut` (enrolls, or rotates) |
+| DELETE | `/sites/{site_id}/trust` | **204**, no body |
+| GET | `/trust/{token}` | server-rendered HTML, public and ungated |
+| GET | `/trust/{token}/qr.png` | PNG QR code, public and ungated |
 
 `POST /sensors` returns **409** if that `sensor_id` already exists — registering is not an upsert.
+Everything under `/sites` is owner-side and may require `X-Admin-Key`; `/trust/*` is public. Details
+in [Owner tools](#owner-tools-sites-checklist-score-trust).
 
 ---
 
@@ -187,6 +205,147 @@ acts on. Track acknowledgement on the alert.
 
 ---
 
+## Owner tools: sites, checklist, score, trust
+
+The surface behind the dashboard's Sites, Checklist, Score, Trust and Settings views.
+
+### The admin gate
+
+Every `/sites*` request may carry `X-Admin-Key: <key>`.
+
+- `ADMIN_API_KEY` unset (the dev default) → the gate is open. The backend logs
+  `ADMIN_API_KEY is unset: owner-side /sites endpoints are open. LAN pilot only.` at startup.
+- `ADMIN_API_KEY` set → a missing or wrong header is **401** `{"detail":"invalid admin key"}`.
+
+`/trust/{token}` and `/trust/{token}/qr.png` are **not** gated — the token in the URL is the
+capability. Neither are `/alerts`, `/events`, `/frames`, `/sensors`, or the two WebSockets.
+
+One key per installation, not per user. The dashboard keeps it in `sessionStorage` (it dies with the
+tab) and sends it on every request; a 401 is surfaced as "admin key rejected".
+
+### Sites
+
+```json
+POST /sites
+{
+  "site_id": "cafe-1",
+  "business_name": "Cafe One",
+  "business_type": "cafe",
+  "wifi_ssids": ["CafeWiFi"],
+  "known_access_points": ["aa:bb:cc:dd:ee:ff"],
+  "router_model": "TP-Link Archer C6",
+  "primary_language": "en",
+  "notes": "Router is behind the counter."
+}
+```
+
+- `site_id` is required, 1–64 characters, and **409** if it already exists.
+- Everything else is optional at creation.
+- `known_access_points` is normalized on write: `aa:bb:cc:dd:ee:ff` → `AA:BB:CC:DD:EE:FF` (the same
+  form frames carry). The response holds the normalized value — display that, not what was typed.
+  An invalid MAC is **422**, naming the index: `known_access_points.0: invalid MAC address: '...'`.
+- `wifi_ssids` must match the SSIDs your sensors actually see, or network hygiene scores 0 and the
+  snapshot carries the `ssids_not_configured` flag.
+
+`PATCH /sites/{site_id}` is a partial update:
+
+- An **omitted** field is untouched.
+- An explicit `null` **clears** `business_name`, `business_type`, `router_model`, `notes`.
+- `null` on `wifi_ssids`, `known_access_points` or `primary_language` is **ignored**, because those
+  columns are NOT NULL. Send `[]` to empty a list, or a real language code.
+- Unknown `site_id` → **404**.
+
+### Sensor assignment
+
+```
+PATCH  /sites/{site_id}/sensors/{sensor_id}   → SensorOut with site_id set
+DELETE /sites/{site_id}/sensors/{sensor_id}   → SensorOut with site_id null
+```
+
+Both return the full `SensorOut`. `SensorOut.site_id` is the only way to know which site owns a
+sensor — without it a reload cannot render assignments. A sensor belongs to at most one site, so
+assigning one that already belongs elsewhere moves it. Either endpoint 404s on an unknown site or
+sensor.
+
+### Checklist
+
+```json
+PUT /sites/cafe-1/checklist
+{ "answers": { "wpa2_or_wpa3": true, "router_physically_secured": false } }
+```
+
+- `GET` returns `answers: {}` before the first save. That is a real state, not a 404: **every
+  unanswered question counts as "no"** in scoring.
+- `PUT` replaces the whole map. Send all keys, or the missing ones become unanswered.
+- Values are `true`, `false`, or `null`.
+- An unknown key is **422** with the reason and the legal keys:
+
+```json
+{ "detail": {
+    "message": "unknown checklist keys",
+    "unknown_keys": ["wifi_is_fast"],
+    "valid_keys": ["router_admin_password_changed", "wpa2_or_wpa3", "..."]
+} }
+```
+
+The eight keys: `router_admin_password_changed`, `wpa2_or_wpa3`, `guest_network_separate`,
+`firmware_updated_12m`, `password_rotated_6m`, `router_physically_secured`, `no_unmanaged_extenders`,
+`staff_share_password_in_person_only`. Wording lives in `backend/app/scoring/config.py` and is
+mirrored once in `frontend/src/i18n.ts`; do not retype a key in a component.
+
+### Score
+
+- `GET /sites/{site_id}/score` → the latest snapshot. **404** `{"detail":"no snapshot yet"}` before
+  the first compute.
+- `GET /sites/{site_id}/score/history?limit=30` → oldest first, `limit` 1–365.
+- Snapshots are written at backend startup and then **once a day**; a second compute on the same day
+  replaces that day's snapshot. A site created after startup has no snapshot until the next sweep —
+  that is why a working demo may show "No snapshot yet" until the backend restarts.
+
+`components` holds already-weighted points, not ratios: `value / weight` is the meter fill.
+
+| Component | Weight |
+| --- | --- |
+| `monitoring_coverage` | 30 |
+| `alert_response` | 30 |
+| `network_hygiene` | 15 |
+| `practices_checklist` | 15 |
+| `threat_exposure` | 10 |
+
+Bands: 0–59 `needs attention`, 60–79 `fair`, 80–100 `good`. `details.flags` is a list of machine
+strings (`no_sensors_assigned`, `ssids_not_configured`) — render a sentence, never the raw token.
+
+### Trust page
+
+```
+POST   /sites/cafe-1/trust   → { "site_id": "cafe-1", "trust_token": "..." }   enroll or rotate
+DELETE /sites/cafe-1/trust   → 204
+```
+
+- `POST` enrolls the site, or **rotates** if it is already enrolled. Rotating invalidates the old URL
+  immediately; an old QR starts returning the 404 below.
+- `DELETE` revokes: 204, token nulled, public page 404s.
+- `SiteOut.trust_token` carries the token on the owner endpoint, so the QR card still renders after a
+  page reload. That endpoint is admin-gated; the public page never reads it.
+- The public page is `GET /trust/{token}`: server-rendered HTML, `Cache-Control: public, max-age=300`,
+  and it shows **only** the business name, band, score, last checked, monitored-since date, and the
+  disclaimer. Notes, router model, language, sensors and tokens never reach it.
+- An unknown token and a revoked token are indistinguishable on purpose:
+  **404** `{"error":"verification unavailable"}`.
+- `GET /trust/{token}/qr.png` is the QR image, encoding the public URL. The card language follows the
+  site's `primary_language`; the frontend only links to it.
+
+### F-24 contract changes
+
+All three are additive — nothing renamed, removed, or retyped, and `/alerts`, `/events`, `/frames` are
+unchanged:
+
+1. `SensorOut.site_id` added (null = unassigned).
+2. `SiteOut.trust_token` added (null = not enrolled).
+3. `GET /sites/{site_id}/checklist` added.
+
+---
+
 ## Types cheat-sheet
 
 ```ts
@@ -209,6 +368,44 @@ interface EventOut {
   severity: number; confidence: number;   // 0.0-1.0
   sensor_ids: string[]; details: Record<string, unknown>; received_at: string;
 }
+
+interface SiteOut {
+  site_id: string;
+  business_name: string | null;
+  business_type: string | null;
+  wifi_ssids: string[];
+  known_access_points: string[];          // normalized: AA:BB:CC:DD:EE:FF
+  router_model: string | null;
+  primary_language: string;               // "en" | "ar"
+  notes: string | null;
+  trust_token: string | null;             // null = public page not enrolled
+  created_at: string; updated_at: string;
+}
+
+interface SensorOut {
+  sensor_id: string;
+  site_id: string | null;                 // null = unassigned
+  name: string | null; location: string | null;
+  channels: number[]; last_seen_at: string | null;
+  registered_at: string; status: SensorStatus;
+}
+
+interface ChecklistOut {
+  site_id: string;
+  answers: Record<string, boolean | null>;
+  updated_at: string;
+}
+
+interface ScoreOut {
+  site_id: string; computed_at: string;
+  score: number;                          // 0-100
+  band: string;                           // "needs attention" | "fair" | "good"
+  components: Record<string, number>;     // weighted points; value / weight = meter fill
+  details: Record<string, unknown>;       // details.flags is a string[]
+  window_days: number;
+}
+
+interface TrustOut { site_id: string; trust_token: string; }
 ```
 
 `details` is rule-specific and **you should not hard-code its keys** — for `deauth_flood` it is
@@ -222,7 +419,7 @@ MAC addresses arrive normalised as `AA:BB:CC:DD:EE:FF` (upper-case, colon-separa
 
 ## Known gaps (so you do not build on them)
 
-- **No auth**, no per-user anything. Single shared view.
+- **No user auth.** One optional owner-side `X-Admin-Key`; no users, no sessions, single shared view.
 - **No alerts/stats by severity over time** — no chart endpoint yet.
 - `frames/recent` takes `seconds` and `limit` but is **not** cursor-paginated; it is bounded by the
   7-day retention sweep.
